@@ -1,0 +1,129 @@
+/* Common stylesheet for the multicopter introduction site
+   マルチコプタ入門サイト共通スタイル */
+
+:root {
+  --bg: #fdfdfc;
+  --fg: #1f2328;
+  --fg-muted: #59636e;
+  --accent: #0b5cad;
+  --accent-soft: #e3eefb;
+  --border: #d9dee3;
+  --card-bg: #ffffff;
+  --code-bg: #f3f4f6;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181c;
+    --fg: #e6e9ec;
+    --fg-muted: #9aa4ae;
+    --accent: #6cb2f5;
+    --accent-soft: #1d2c3e;
+    --border: #333a41;
+    --card-bg: #1b2126;
+    --code-bg: #23292f;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  line-height: 1.9;
+  -webkit-font-smoothing: antialiased;
+}
+
+main {
+  max-width: 46rem;
+  margin: 0 auto;
+  padding: 2.5rem 1.25rem 5rem;
+}
+
+header.site-header {
+  border-bottom: 1px solid var(--border);
+  padding: 2.5rem 1.25rem 2rem;
+  text-align: center;
+}
+
+header.site-header h1 {
+  margin: 0 0 0.5rem;
+  font-size: 1.9rem;
+  letter-spacing: 0.02em;
+}
+
+header.site-header p.subtitle {
+  margin: 0;
+  color: var(--fg-muted);
+}
+
+h2 {
+  margin-top: 3rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 2px solid var(--accent-soft);
+  font-size: 1.4rem;
+}
+
+h3 { font-size: 1.15rem; margin-top: 2.2rem; }
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code {
+  background: var(--code-bg);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+/* Chapter list on the landing page
+   ランディングページの章リスト */
+ol.chapter-list {
+  list-style: none;
+  counter-reset: chapter;
+  padding: 0;
+}
+
+ol.chapter-list li {
+  counter-increment: chapter;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  margin: 0.8rem 0;
+  padding: 1rem 1.2rem;
+  display: flex;
+  align-items: baseline;
+  gap: 1rem;
+}
+
+ol.chapter-list li::before {
+  content: counter(chapter);
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.badge {
+  margin-left: auto;
+  font-size: 0.75rem;
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.1em 0.7em;
+  white-space: nowrap;
+}
+
+.badge.wip { color: var(--accent); border-color: var(--accent); }
+
+footer.site-footer {
+  border-top: 1px solid var(--border);
+  color: var(--fg-muted);
+  text-align: center;
+  padding: 2rem 1rem;
+  font-size: 0.85rem;
+}
