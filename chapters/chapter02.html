@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第2章 機体のしくみ | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; width: 100%; }
+    .data-table caption { caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); padding-top: 0.4rem; text-align: left; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    /* ---- mixer widget ---- */
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-controls { display: grid; grid-template-columns: 6.5rem 1fr 4.5rem; gap: 0.45rem 0.8rem; align-items: center; margin-top: 0.9rem; font-size: 0.9rem; }
+    .sim-controls input[type="range"] { width: 100%; }
+    .sim-controls .val { font-family: ui-monospace, Menlo, monospace; font-size: 0.82rem; color: var(--fg-muted); text-align: right; }
+    .sim-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; margin-top: 0.9rem; }
+    .sim-buttons button {
+      font: inherit; padding: 0.35rem 1rem; border-radius: 8px; border: 1.5px solid var(--accent);
+      background: var(--accent-soft); color: var(--fg); cursor: pointer;
+    }
+    .sim-buttons button.active { background: var(--accent); color: #fff; }
+    .sim-msg { margin-top: 0.7rem; font-size: 0.9rem; min-height: 2.6em; }
+    .sim-msg .warn { color: #c2373b; font-weight: 700; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第2章</p>
+    <h1>機体のしくみ</h1>
+    <p class="subtitle">ロータ配置・推力と反トルク・ミキシング</p>
+  </header>
+
+  <main>
+    <p>
+      第1章で「制御すべき量は上下・ロール・ピッチ・ヨーの 4 つ、だからロータは 4 つ」
+      というところまで来ました。この章では、その 4 つのロータの推力が
+      どうやって 4 つの量に変換されるのか——機体の幾何と物理——を順序立てて組み立てます。
+      到達点は<strong>アロケーション行列（配置行列）</strong>と、その逆変換である
+      <strong>ミキシング</strong>です。
+    </p>
+
+    <h2>2.1 プロペラが機体に及ぼすもの: 推力と反トルク</h2>
+    <p>
+      1 枚のプロペラが機体に与えるものは 2 つあります。ひとつは言うまでもなく
+      <strong>推力</strong> \(T = C_T\,\omega^2\)。もうひとつが<strong>反トルク</strong>です。
+      そして反トルクは、実は<strong>二つの物理現象</strong>からなります。
+    </p>
+    <h3>(1) 空気による反作用のトルク</h3>
+    <p>
+      プロペラは回転するとき空気を押しのけます。作用反作用の法則により、
+      空気を押しのけているプロペラは、同時に空気から押し返されています。
+      CW（時計回り）に空気をかき回すプロペラは、空気から CCW（反時計回り）向きに
+      押されるのです。モータとプロペラは機体フレームに固定されていますから、
+      <strong>プロペラを CW に回すと、空気は機体を CCW に回そうとします</strong>。
+      この定常的なトルクは推力に比例し、\(\tau_{air} = \kappa\,T\)
+      （StampFly では \(\kappa = C_Q/C_T = 9.71\times10^{-3}\ \mathrm{m}\)）と書けます。
+    </p>
+    <p>
+      もし同じ回転方向のプロペラだけで機体を作ると、機体は常にプロペラと反対方向に
+      回ろうとします。だからマルチコプタは<strong>違う回転方向のプロペラを同じ数だけ</strong>
+      用意して、互いの反トルクを打ち消しているのです。
+    </p>
+    <h3>(2) 回転体を加速するときの反トルク</h3>
+    <p>
+      もうひとつは、プロペラの<strong>回転数を変える瞬間</strong>に現れるトルクです。
+      モータを机の上に置いて始動すると、起動の瞬間に身震いするように一瞬回転する——
+      あれが加速による反トルクで、\(\tau_{acc} = J_{mp}\,\dot{\omega}\)
+      （\(J_{mp}\): ロータ+プロペラの慣性モーメント）と書けます。
+      空気の反作用が回転数の変化に追随してじわりと変わるのに対し、
+      こちらは<strong>はるかに速く</strong>現れます。
+    </p>
+    <p>StampFly の数値で両者の大きさを見積もると:</p>
+    <table class="data-table">
+      <thead><tr><th></th><th>空気の反作用 \(\kappa\,\Delta T\)</th><th>加速の反トルク \(J_{mp}\dot{\omega}\)</th></tr></thead>
+      <tbody>
+        <tr><td>性質</td><td>定常（回転数に追随）</td><td>過渡（回転数変化中のみ）</td></tr>
+        <tr><td>4発合計の目安*</td><td>約 0.35 mN·m</td><td>初期 約 0.6 mN·m</td></tr>
+      </tbody>
+      <caption>* 各モータ推力を ±10% ステップさせた場合の概算
+      （\(J_{mp}=2.01\times10^{-8}\ \mathrm{kg\,m^2}\)、モータ時定数 20 ms）。
+      回転数を変えている最中は、加速の反トルクが空気の反作用と同等以上になる。</caption>
+    </table>
+    <p>
+      ヨーの制御は、この<strong>空気と加速、二つの反トルクを上手に使うことがポイント</strong>になります。
+    </p>
+
+    <h2>2.2 座標系とロータ配置</h2>
+    <p>
+      ここから数式で組み立てるために、機体座標系を決めます。航空分野の標準である
+      <strong>NED 系</strong>（機体では <strong>FRD</strong>: Front-Right-Down とも呼びます）を使います:
+      \(x\) 軸は機首方向、\(y\) 軸は右方向、\(z\) 軸は<strong>下向き</strong>です。
+      \(z\) が下向きなのは違和感があるかもしれませんが、右手系のまま
+      「機首上げ・右傾き・右旋回」を正にできる、航空の伝統的な取り方です。
+    </p>
+    <p>
+      StampFly のロータ配置は X 配置で、重心から前後・左右に \(d = 0.023\ \mathrm{m}\)
+      ずつ離れた位置に 4 つのモータがあります。回転方向は<strong>対角同士が同じ</strong>:
+    </p>
+    <table class="data-table">
+      <thead><tr><th>モータ</th><th>位置 \((x_i, y_i)\)</th><th>回転方向</th></tr></thead>
+      <tbody>
+        <tr><td>M1（前右）</td><td>\((+d, +d)\)</td><td>CCW</td></tr>
+        <tr><td>M2（後右）</td><td>\((-d, +d)\)</td><td>CW</td></tr>
+        <tr><td>M3（後左）</td><td>\((-d, -d)\)</td><td>CCW</td></tr>
+        <tr><td>M4（前左）</td><td>\((+d, -d)\)</td><td>CW</td></tr>
+      </tbody>
+      <caption>StampFly のロータ配置（機体仕様より）</caption>
+    </table>
+
+    <h2>2.3 アロケーション行列を組み立てる</h2>
+    <p>
+      4 つの推力 \(T_1,\dots,T_4\) が機体に与える合計の力とトルクを、一つずつ足し上げます。
+    </p>
+    <p><strong>手順 1 — 総推力。</strong> これは単純な和です: \(F = T_1+T_2+T_3+T_4\)。</p>
+    <p>
+      <strong>手順 2 — ロール・ピッチトルク。</strong> 位置 \((x_i, y_i)\) にある上向き推力 \(T_i\) は、
+      てこの原理で重心回りのトルク \(\boldsymbol{r}_i \times \boldsymbol{F}_i\) を作ります。
+      NED 系で計算すると、ロール（\(x\) 軸回り）は \(\tau_x = -\sum y_i T_i\)、
+      ピッチ（\(y\) 軸回り）は \(\tau_y = +\sum x_i T_i\) となります。
+      直感的には「左側を強くすると右に傾く力（正のロール）」「前側を強くすると機首上げ（正のピッチ）」です。
+    </p>
+    <p>
+      <strong>手順 3 — ヨートルク。</strong> ここだけ出所が違います。ヨーは腕の長さではなく、
+      2.1 節の反トルク \(\kappa T_i\) の総和です。符号はプロペラの回転方向の逆:
+      CCW プロペラ（M1, M3）は機体を CW（正のヨー）に、CW プロペラ（M2, M4）は
+      CCW（負のヨー）に回そうとします。
+    </p>
+    <p><strong>手順 4 — まとめる。</strong> 以上を行列の形に整理すると:</p>
+    <div class="math-scroll">
+    $$\begin{pmatrix} F \\ \tau_x \\ \tau_y \\ \tau_z \end{pmatrix}
+    = \underbrace{\begin{pmatrix}
+        1 & 1 & 1 & 1 \\
+        -d & -d & +d & +d \\
+        +d & -d & -d & +d \\
+        +\kappa & -\kappa & +\kappa & -\kappa
+      \end{pmatrix}}_{\text{アロケーション行列 } A}
+      \begin{pmatrix} T_1 \\ T_2 \\ T_3 \\ T_4 \end{pmatrix}$$
+    </div>
+    <p>
+      これが<strong>アロケーション行列（配置行列）</strong>です。名前の通り、
+      中身はロータの<strong>配置（位置と回転方向）だけ</strong>で決まっています。
+      機体の設計図が、そのまま 1 つの行列に凝縮されているわけです。
+    </p>
+
+    <h2>2.4 ミキシング = アロケーション行列の逆変換</h2>
+    <p>
+      制御側が欲しいのは逆向きの変換です。姿勢制御器が「総推力 \(F\)、ロールトルク \(\tau_x\)、
+      ピッチトルク \(\tau_y\)、ヨートルク \(\tau_z\) が欲しい」と言ったとき、
+      それを実現する各モータの推力 \(T_1,\dots,T_4\) を求めたい。
+      クアッドコプタでは \(A\) が 4×4 の正方行列なので、逆行列がそのまま使えます:
+      \(\boldsymbol{T} = A^{-1}(F, \tau_x, \tau_y, \tau_z)^{\mathsf{T}}\)。
+      成分で書くと、きれいな足し引きになります:
+    </p>
+    <div class="math-scroll">
+    $$\begin{aligned}
+      T_1 &= \tfrac{F}{4} - \tfrac{\tau_x}{4d} + \tfrac{\tau_y}{4d} + \tfrac{\tau_z}{4\kappa} &\text{（前右 CCW）}\\
+      T_2 &= \tfrac{F}{4} - \tfrac{\tau_x}{4d} - \tfrac{\tau_y}{4d} - \tfrac{\tau_z}{4\kappa} &\text{（後右 CW）}\\
+      T_3 &= \tfrac{F}{4} + \tfrac{\tau_x}{4d} - \tfrac{\tau_y}{4d} + \tfrac{\tau_z}{4\kappa} &\text{（後左 CCW）}\\
+      T_4 &= \tfrac{F}{4} + \tfrac{\tau_x}{4d} + \tfrac{\tau_y}{4d} - \tfrac{\tau_z}{4\kappa} &\text{（前左 CW）}
+    \end{aligned}$$
+    </div>
+    <p>
+      この逆変換を<strong>ミキシング</strong>と呼びます。
+      「ロールしたければ左右で足し引き、ピッチなら前後で足し引き、ヨーなら対角で足し引き」——
+      ラジコンの世界で昔から使われてきた言葉ですが、正体はただの逆行列です。
+    </p>
+    <div class="note-box">
+      <strong>ヨーの効きはなぜ弱いか:</strong> ロール・ピッチの項は \(1/(4d)\)、
+      ヨーの項は \(1/(4\kappa)\) で割られています。StampFly では
+      \(d = 23\ \mathrm{mm}\) に対して \(\kappa = 9.7\ \mathrm{mm}\)。
+      ロールとピッチは推力を腕の長さ \(d\) で効かせられるのに対し、ヨーは反トルク経由の
+      短い「実効腕」\(\kappa\) しか使えないため、<strong>同じ推力変化から得られるトルクが
+      はるかに小さい</strong>のです。実機の同定でも実効プラントゲインは
+      Roll 102 / Pitch 70 / Yaw 19 \(\mathrm{rad/s^2}\)（単位入力あたり）と、
+      ヨーだけ 1 桁近く小さい値になっています。
+    </div>
+
+    <h2>2.5 なぜ「対角」でなければならないか</h2>
+    <p>
+      第1章の疑問——なぜ対角同士を同じ回転方向にするのか——に、行列の言葉で答えられます。
+      ロール操作ではミキシングが右ペア（M1, M2）と左ペア（M3, M4）を逆向きに増減します。
+      対角配置なら、右ペアも左ペアも「CW 1 発 + CCW 1 発」なので、
+      <strong>CW 全体と CCW 全体の強さの釣り合いは崩れません</strong>。
+      ロールでもピッチでも、ヨーのバランスは取れたまま——
+      ロールやピッチを回すときにヨーが同時に起きないのです。
+    </p>
+    <p>
+      これは \(A\) の<strong>行同士の直交性</strong>として現れています
+      （例えばロール行とヨー行の内積は \((-d)(\kappa)+(-d)(-\kappa)+(d)(\kappa)+(d)(-\kappa)=0\)）。
+      では、隣接配置（右 2 発を CW、左 2 発を CCW）にしたらどうなるか。
+      ヨー行が \((-\kappa, -\kappa, +\kappa, +\kappa)\) となり、
+      <strong>ロール行のちょうど \(\kappa/d\) 倍</strong>になってしまいます。
+      行列の言葉で言えば \(A\) が特異（行列式がゼロ、逆行列が存在しない）。
+      物理の言葉で言えば:
+    </p>
+    <ul>
+      <li>ロールを指令すると、必ずヨートルク \((\kappa/d)\,\tau_x\) が「漏れて」ついてくる</li>
+      <li>対角配置用のヨーの足し引き \((+,-,+,-)\) を入れても、トルクは何も生まれない
+        ——<strong>ヨーを独立に操る手段そのものが消滅する</strong></li>
+    </ul>
+    <p>下の操作盤で、実際に触って確かめてみてください。</p>
+
+    <h2>2.6 体感する: ミキシング操作盤</h2>
+    <p>
+      スライダーが操縦者の指令（スロットル・ロール・ピッチ・ヨー）、
+      その下の機体が上から見た StampFly です。ミキシングを通った各モータの推力の増減と、
+      機体に生じる合計トルクが表示されます。
+      「隣接配置」ボタンで回転方向の配置だけを変えると何が壊れるかに注目してください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="mixCanvas" width="760" height="430"></canvas>
+      <div class="sim-controls">
+        <span>スロットル</span><input type="range" id="sThr" min="-30" max="30" value="0"><span class="val" id="vThr">+0%</span>
+        <span>ロール</span><input type="range" id="sRoll" min="-100" max="100" value="0"><span class="val" id="vRoll">0</span>
+        <span>ピッチ</span><input type="range" id="sPitch" min="-100" max="100" value="0"><span class="val" id="vPitch">0</span>
+        <span>ヨー</span><input type="range" id="sYaw" min="-100" max="100" value="0"><span class="val" id="vYaw">0</span>
+      </div>
+      <div class="sim-buttons">
+        <button id="btnDiag" class="active">対角配置（実機）</button>
+        <button id="btnAdj">隣接配置（思考実験）</button>
+        <button id="btnZero">指令をゼロに</button>
+      </div>
+      <div class="sim-msg" id="mixMsg"></div>
+    </div>
+
+    <p class="src">
+      操作盤の計算はこの章のミキシング式そのままです（\(d=0.023\ \mathrm{m}\)、
+      \(\kappa=9.71\times10^{-3}\ \mathrm{m}\)、ホバリング推力 \(T_0=90.3\ \mathrm{mN}\)/発）。
+      隣接配置モードでも「対角配置用のミキシング」を使い続けることで、
+      配置と計算が食い違うと何が起きるかを見せています。トルクは機体に生じる正味値です。
+    </p>
+
+    <h2>2.7 推力から Duty へ</h2>
+    <p>
+      ミキシングの出力は各モータの<strong>推力指令</strong> \(T_i\) です。
+      実際にモータに送るのは PWM の Duty（0〜1 の指令値）なので、最後にもう一段の変換が要ります。
+      考え方は 2 段階です:
+    </p>
+    <p>
+      <strong>(1) 推力 → 角速度。</strong> \(T = C_T\,\omega^2\) を逆に解いて
+      \(\omega_{cmd} = \sqrt{T_{cmd}/C_T}\)。StampFly のファームウェアも
+      実際にこの式で角速度指令を作っています。
+    </p>
+    <p>
+      <strong>(2) 角速度 → Duty。</strong> モータの定常特性から、目標の \(\omega\) を出すのに
+      必要な Duty を求めます。StampFly のベンチ実測では、ホバリング付近で
+      <strong>推力は Duty にほぼ比例</strong>（\(T \propto \mathrm{Duty}^{0.97}\)）という
+      素直な特性でした。したがって一次式の近似でも実用になります。
+    </p>
+    <p>
+      ただし第1章で見た通り、この変換には<strong>個体差</strong>があります（同じ Duty でも
+      回転数は 5〜16% ズレる）。さらに電池電圧の低下でも特性は変わります。
+      それでも飛べるのは、この変換の誤差を<strong>フィードバック制御が黙って吸収してくれる</strong>
+      からです。誤差を検知して打ち消すという第1章の構図が、ここでも効いています。
+      モータの応答遅れ（時定数 約 20 ms）や電圧補償の話は、第4章と実装の章で掘り下げます。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>プロペラは推力 \(T=C_T\omega^2\) と反トルクを機体に与える。反トルクは
+        <strong>空気の反作用</strong>（定常、\(\kappa T\)）と<strong>回転加速の反動</strong>
+        （過渡、\(J_{mp}\dot\omega\)）の二つの現象。</li>
+      <li>逆回転のプロペラを同数積むことで反トルクを打ち消す。</li>
+      <li>ロータの配置（位置と回転方向）は<strong>アロケーション行列</strong>に凝縮され、
+        その逆変換が<strong>ミキシング</strong>。</li>
+      <li>ヨーは腕 \(d\) でなく実効腕 \(\kappa\) しか使えないため、効きが 1 桁近く弱い。</li>
+      <li>対角配置はアロケーション行列の行を直交させ、ロール・ピッチ・ヨーを分離する。
+        隣接配置では行列が特異になり、ヨーを独立に操れなくなる。</li>
+      <li>推力指令は \(\omega=\sqrt{T/C_T}\) と定常特性で Duty に変換。残る誤差は
+        フィードバックが吸収する。</li>
+    </ul>
+    <p>
+      次章では、この章で作った「入力（4 つのトルクと推力）」を受け取る側——
+      機体の運動方程式——を組み立てます。
+    </p>
+
+    <p class="src">
+      データの出所: 機体仕様（モータ位置・κ・\(J_{mp}\)）、モータベンチ実測（2026 年 3 月）、
+      実機同定による軸別プラントゲイン。計算の再現スクリプトは notes/calc/ にあります。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter01.html">← 第1章 マルチコプタはなぜ落ちないのか</a>
+      <span>第3章（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Mixing console / ミキシング操作盤
+  // Forward physics: stick commands -> (diagonal-quad) mixing ->
+  // per-motor thrusts -> net torques under the SELECTED arrangement.
+  // 指令 -> 対角配置用ミキシング -> 各モータ推力 -> 選択中の配置での正味トルク
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const D = 0.023;             // moment arm [m]
+    const KAPPA = 9.71e-3;       // torque/thrust ratio κ [m]
+    const T0 = 0.0368 * 9.81 / 4; // hover thrust per motor [N]
+
+    // Motor geometry: M1:FR, M2:RR, M3:RL, M4:FL / モータ配置（上面図）
+    const POS = [[+1, +1], [-1, +1], [-1, -1], [+1, -1]]; // (x fwd, y right) in units of d
+    // spin direction: +1 = CW (viewed from above), -1 = CCW
+    const DIR_DIAG = [-1, +1, -1, +1];  // actual StampFly / 実機（対角）
+    const DIR_ADJ  = [+1, +1, -1, -1];  // thought experiment: right pair CW / 隣接
+    let dirs = DIR_DIAG;
+
+    // command scale: sliders (±100) -> per-motor thrust delta up to ±25% of T0
+    // スライダー±100 → 各モータ±25%T0 の足し引きに対応
+    const DT_MAX = 0.25 * T0;
+
+    const cv = document.getElementById('mixCanvas');
+    const ctx = cv.getContext('2d');
+    const $ = id => document.getElementById(id);
+    const sliders = { thr: $('sThr'), roll: $('sRoll'), pitch: $('sPitch'), yaw: $('sYaw') };
+    const vals = { thr: $('vThr'), roll: $('vRoll'), pitch: $('vPitch'), yaw: $('vYaw') };
+
+    let spinPhase = [0, 0, 0, 0];  // prop animation phase / プロペラ描画位相
+    let lastTs = null;
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        soft: s.getPropertyValue('--accent-soft').trim() || '#e3eefb',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    // --- mixing (always the diagonal-quad formula, as the firmware would) ---
+    // ミキシング（ファームウェアと同じ、対角配置前提の式を常に使う）
+    function motorThrusts() {
+      const thr = Number(sliders.thr.value) / 100;   // ±0.30
+      const r = Number(sliders.roll.value) / 100;    // ±1
+      const p = Number(sliders.pitch.value) / 100;
+      const y = Number(sliders.yaw.value) / 100;
+      const base = T0 * (1 + thr);
+      // sign patterns from A^-1 rows / A^-1 の符号パターン
+      const sr = [-1, -1, +1, +1], sp = [+1, -1, -1, +1], sy = [+1, -1, +1, -1];
+      return POS.map((_, i) =>
+        Math.max(0, base + DT_MAX * (r * sr[i] + p * sp[i] + y * sy[i])));
+    }
+
+    // --- net torques under the CURRENT arrangement / 現在の配置での正味トルク ---
+    function netTorques(T) {
+      let tx = 0, ty = 0, tz = 0, F = 0;
+      for (let i = 0; i < 4; i++) {
+        F += T[i];
+        tx += -POS[i][1] * D * T[i];
+        ty += +POS[i][0] * D * T[i];
+        tz += -dirs[i] * KAPPA * T[i];   // reaction opposite to spin / 反トルクは回転の逆
+      }
+      return { F, tx, ty, tz };
+    }
+
+    function fmt(x, digits) { return (x >= 0 ? '+' : '') + x.toFixed(digits); }
+
+    function updateLabels() {
+      vals.thr.textContent = fmt(Number(sliders.thr.value), 0) + '%';
+      vals.roll.textContent = sliders.roll.value;
+      vals.pitch.textContent = sliders.pitch.value;
+      vals.yaw.textContent = sliders.yaw.value;
+    }
+
+    function draw(dt) {
+      const c = themeColors();
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const T = motorThrusts();
+      const q = netTorques(T);
+
+      // spin animation speed ∝ sqrt(thrust) / 回転アニメは√推力に比例
+      for (let i = 0; i < 4; i++) {
+        spinPhase[i] += dirs[i] * 14 * Math.sqrt(T[i] / T0) * dt;
+      }
+
+      // ----- left: top view / 左: 上面図 -----
+      const cx = 210, cy = 215, armPx = 105;
+      ctx.strokeStyle = c.muted; ctx.lineWidth = 10; ctx.lineCap = 'round';
+      for (const s of [[1, 1], [-1, -1], [-1, 1], [1, -1]]) {
+        ctx.beginPath(); ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + s[1] * armPx, cy - s[0] * armPx); ctx.stroke();
+      }
+      // nose marker / 機首マーク
+      ctx.fillStyle = c.accent;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 34); ctx.lineTo(cx - 9, cy - 14); ctx.lineTo(cx + 9, cy - 14);
+      ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.arc(cx, cy, 15, 0, 2 * Math.PI); ctx.fill();
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'center';
+      ctx.fillText('前', cx, cy - 42);
+
+      const names = ['M1 前右', 'M2 後右', 'M3 後左', 'M4 前左'];
+      for (let i = 0; i < 4; i++) {
+        const px = cx + POS[i][1] * armPx, py = cy - POS[i][0] * armPx;
+        const rel = T[i] / T0;                       // 1.0 = hover
+        const rad = 34;
+        // disc fill encodes thrust / 円の濃さ=推力
+        ctx.beginPath(); ctx.arc(px, py, rad, 0, 2 * Math.PI);
+        ctx.fillStyle = c.soft; ctx.fill();
+        ctx.strokeStyle = c.accent; ctx.lineWidth = 2; ctx.stroke();
+        // rotating blades / 回転する羽根
+        ctx.save(); ctx.translate(px, py); ctx.rotate(spinPhase[i]);
+        ctx.strokeStyle = c.fg; ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.moveTo(-rad + 6, 0); ctx.lineTo(rad - 6, 0); ctx.stroke();
+        ctx.restore();
+        // spin direction arc / 回転方向の弧矢印
+        ctx.save(); ctx.translate(px, py);
+        ctx.strokeStyle = c.muted; ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        if (dirs[i] > 0) { ctx.arc(0, 0, rad + 7, -0.4, 1.2); } else { ctx.arc(0, 0, rad + 7, Math.PI - 1.2, Math.PI + 0.4); }
+        ctx.stroke(); ctx.restore();
+        // labels / ラベル
+        ctx.fillStyle = c.fg; ctx.font = 'bold 12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText(names[i], px, py + rad + 20);
+        ctx.fillStyle = rel > 1.001 ? '#c2373b' : (rel < 0.999 ? '#0a7d33' : c.muted);
+        ctx.font = '12px ui-monospace, monospace';
+        ctx.fillText((rel * 100).toFixed(0) + '%', px, py + rad + 35);
+        ctx.fillStyle = c.muted; ctx.font = '10px sans-serif';
+        ctx.fillText(dirs[i] > 0 ? 'CW' : 'CCW', px, py - rad - 12);
+      }
+
+      // ----- right: torque bars / 右: トルクバー -----
+      const bx = 470, bw = 250, rowH = 56, by = 90;
+      const items = [
+        ['総推力', (q.F / (4 * T0) - 1), '±30%', 0.30],
+        ['ロール τx', q.tx * 1000, '±2.1 mN·m', 2.2],
+        ['ピッチ τy', q.ty * 1000, '±2.1 mN·m', 2.2],
+        ['ヨー τz', q.tz * 1000, '±2.1 mN·m', 2.2],
+      ];
+      ctx.textAlign = 'left'; ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = c.fg;
+      ctx.fillText('機体に生じる正味の推力・トルク', bx, 40);
+      for (let k = 0; k < items.length; k++) {
+        const [label, val, scaleTxt, vmax] = items[k];
+        const yy = by + k * rowH;
+        ctx.fillStyle = c.fg; ctx.font = '13px sans-serif';
+        ctx.fillText(label, bx, yy - 8);
+        ctx.fillStyle = c.muted; ctx.font = '10px sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(scaleTxt, bx + bw, yy - 8);
+        ctx.textAlign = 'left';
+        // bar track
+        ctx.fillStyle = c.soft;
+        ctx.fillRect(bx, yy, bw, 14);
+        ctx.strokeStyle = c.border; ctx.strokeRect(bx, yy, bw, 14);
+        // center line
+        ctx.strokeStyle = c.muted;
+        ctx.beginPath(); ctx.moveTo(bx + bw / 2, yy - 3); ctx.lineTo(bx + bw / 2, yy + 17); ctx.stroke();
+        // value bar (yaw leak highlighted in red)
+        // 値バー（ヨー漏れは赤で強調）
+        const frac = Math.max(-1, Math.min(1, val / vmax));
+        const leak = (k === 3 && dirs === DIR_ADJ && Math.abs(val) > 1e-3 && Number(sliders.yaw.value) === 0);
+        ctx.fillStyle = leak ? '#c2373b' : c.accent;
+        if (frac >= 0) ctx.fillRect(bx + bw / 2, yy + 1, frac * bw / 2, 12);
+        else ctx.fillRect(bx + bw / 2 + frac * bw / 2, yy + 1, -frac * bw / 2, 12);
+        ctx.fillStyle = c.fg; ctx.font = '11px ui-monospace, monospace';
+        ctx.fillText(k === 0 ? fmt(val * 100, 1) + '%' : fmt(val, 2) + ' mN·m', bx, yy + 28);
+      }
+
+      // message / メッセージ
+      const msg = $('mixMsg');
+      if (dirs === DIR_ADJ) {
+        const rollIn = Number(sliders.roll.value) !== 0 || Number(sliders.pitch.value) !== 0;
+        const yawIn = Number(sliders.yaw.value) !== 0;
+        let m = '<strong>隣接配置モード:</strong> 右2発CW・左2発CCW。';
+        if (rollIn && Math.abs(q.tz) > 1e-4) m += ' <span class="warn">ロール/ピッチ指令にヨートルクが漏れています！</span>';
+        if (yawIn) m += ' <span class="warn">ヨー指令がトルクを生みません（対角の足し引きが空振り）。</span>';
+        if (!rollIn && !yawIn) m += ' 指令を入れて、何が壊れるか確かめてください。';
+        msg.innerHTML = m;
+      } else {
+        msg.innerHTML = '<strong>対角配置モード（実機）:</strong> どの指令を入れても他の軸のトルクはゼロのまま——行の直交性が効いています。';
+      }
+    }
+
+    function frame(ts) {
+      if (lastTs === null) lastTs = ts;
+      const dt = Math.min(0.05, (ts - lastTs) / 1000);
+      lastTs = ts;
+      draw(dt);
+      requestAnimationFrame(frame);
+    }
+
+    // --- UI events ---
+    for (const k of Object.keys(sliders)) sliders[k].addEventListener('input', updateLabels);
+    $('btnDiag').addEventListener('click', () => {
+      dirs = DIR_DIAG;
+      $('btnDiag').classList.add('active'); $('btnAdj').classList.remove('active');
+    });
+    $('btnAdj').addEventListener('click', () => {
+      dirs = DIR_ADJ;
+      $('btnAdj').classList.add('active'); $('btnDiag').classList.remove('active');
+    });
+    $('btnZero').addEventListener('click', () => {
+      for (const k of Object.keys(sliders)) sliders[k].value = 0;
+      updateLabels();
+    });
+
+    updateLabels();
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>
