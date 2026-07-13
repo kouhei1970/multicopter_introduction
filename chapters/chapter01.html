@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第1章 マルチコプタはなぜ落ちないのか | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    /* ---- chapter-local styles / この章だけのスタイル ---- */
+    .causal-chain { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: stretch; margin: 1.2rem 0; }
+    .causal-chain .step {
+      flex: 1 1 8.5rem; border: 1.5px solid var(--accent); border-radius: 8px;
+      background: var(--accent-soft); padding: 0.5rem 0.6rem; font-size: 0.86rem;
+      line-height: 1.5; position: relative; min-width: 8rem;
+    }
+    .causal-chain .step .no { font-weight: 700; color: var(--accent); display: block; font-size: 0.78rem; }
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; width: 100%; }
+    .data-table caption { caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); padding-top: 0.4rem; text-align: left; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    /* ---- simulator ---- */
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-controls { display: flex; flex-wrap: wrap; gap: 0.6rem 1.2rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-controls button {
+      font: inherit; padding: 0.35rem 1rem; border-radius: 8px; border: 1.5px solid var(--accent);
+      background: var(--accent-soft); color: var(--fg); cursor: pointer;
+    }
+    .sim-controls button.primary { background: var(--accent); color: #fff; }
+    .sim-controls label { display: flex; align-items: center; gap: 0.4rem; }
+    .sim-controls input[type="range"] { width: 11rem; }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    .ctl-state-on { color: #0a7d33; font-weight: 700; }
+    .ctl-state-off { color: #c2373b; font-weight: 700; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第1章</p>
+    <h1>マルチコプタはなぜ落ちないのか</h1>
+    <p class="subtitle">導入と全体像: 静安定のない乗り物と、それを支える制御</p>
+  </header>
+
+  <main>
+    <p>
+      手のひらサイズのドローンが空中でピタリと静止する。今では見慣れた光景ですが、
+      あの機体は<strong>コンピュータの制御なしには 1 秒たりとも姿勢を保てません</strong>。
+      紙飛行機は誰も操縦しなくても滑空するのに、なぜマルチコプタは「素」では飛べないのか。
+      この章では、その理由を実機の測定データまで使って定量的に確かめます。
+      それがそのまま、本教材全体で学ぶ「制御」の動機になります。
+    </p>
+
+    <h2>1.1 飛行機は「構造」が飛ばしている — 復元力と静安定</h2>
+    <p>
+      まず、手放しで飛べる側の代表として固定翼機を見てみます。
+      飛行機は、姿勢を崩すようなトルクが加わって傾き始めても、
+      <strong>それを元に戻すトルクを機体の構造そのものが発生させる</strong>ことができます。
+      この「元に戻すトルク」を<strong>復元力</strong>と呼び、
+      復元力が発生する性質を<strong>静安定</strong>と呼びます。
+    </p>
+    <p>
+      代表的な仕組みが主翼の<strong>上反角</strong>（両翼を少し上向きに傾けて取り付けること）です。
+      働き方は次の因果の連鎖で理解できます。
+    </p>
+
+    <div class="causal-chain" aria-label="上反角による復元の因果連鎖">
+      <div class="step"><span class="no">①</span>機体がどちらかに傾く</div>
+      <div class="step"><span class="no">②</span>揚力に横方向成分が生じ、機体が横に滑り始める</div>
+      <div class="step"><span class="no">③</span>横滑りによって、機体は横から風を受ける</div>
+      <div class="step"><span class="no">④</span>上反角のため、横風に対する左右の翼の風の受け方に差が生じ、揚力に左右差が生まれる</div>
+      <div class="step"><span class="no">⑤</span>揚力差が傾きを戻すトルク（復元力）となり、傾きが自動的に修正される</div>
+    </div>
+
+    <p>
+      翼の揚力は風の速さと向きで決定的に変わるため、この連鎖はセンサもコンピュータも使わずに、
+      空気力学だけで働き続けます。いわば<strong>翼という構造がフィードバック制御に相当する仕事を
+      無償でやってくれている</strong>のです。気球も同様に、傾けば浮力と重力の作用点のずれが
+      復元トルクを生むため、静安定を持ちます。
+    </p>
+    <p>
+      ではマルチコプタはどうか。<strong>マルチコプタには揚力を稼ぐ固定翼がそもそもありません</strong>。
+      したがって上反角効果を利用した復元力を持たせることができません
+      （固定翼を持つハイブリッド機は存在しますが、本教材では除いて議論します）。
+    </p>
+
+    <h2>1.2 わずかな個体差が命取りになる</h2>
+    <p>
+      復元力がなくても、完全に左右対称なら釣り合ったまま飛べるのでは？と思うかもしれません。
+      すべてのプロペラが全く同じで、全く同じモータが回しているなら、
+      ひっくり返らずに飛べるかもしれません。しかし実際には、プロペラもモータも
+      <strong>すべて微妙に違っていて、どうしてもわずかな推力差が発生します</strong>。
+      推力差は機体を傾けるトルク差になります。
+    </p>
+    <p>
+      静安定のある機体なら、このくらいの外乱は復元力が黙って打ち消してくれます。
+      ところがマルチコプタでは、わずかな違いでも致命的です。
+      傾きを戻す仕組みがないので<strong>姿勢はどんどん崩れ、いずれひっくり返ってしまいます</strong>。
+      だからこそ、姿勢の崩れを<strong>検知</strong>して、それを<strong>打ち消すように
+      プロペラの推力差を補正</strong>する仕事——すなわち制御——が必要になるのです。
+    </p>
+
+    <h2>1.3 数字で見る: 0.1% のズレで 1.9 秒</h2>
+    <p>
+      「どんどん崩れる」とはどのくらいの速さなのか、実在の機体で計算してみます。
+      題材は教材を通して使う小型クアッドコプタ <strong>StampFly</strong>（質量 36.8 g）です。
+      使うパラメータは実機の仕様値・実測値です。
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>量</th><th>記号</th><th>値</th><th>意味</th></tr></thead>
+      <tbody>
+        <tr><td>質量</td><td>\(m\)</td><td>36.8 g</td><td>機体全備質量</td></tr>
+        <tr><td>ロール軸慣性モーメント</td><td>\(I_{xx}\)</td><td>\(9.16\times10^{-6}\ \mathrm{kg\,m^2}\)</td><td>ロール回転のしにくさ</td></tr>
+        <tr><td>モーメントアーム</td><td>\(d\)</td><td>0.023 m</td><td>重心からプロペラ軸までの横方向距離</td></tr>
+        <tr><td>推力係数</td><td>\(C_T\)</td><td>\(1.0\times10^{-8}\ \mathrm{N/(rad/s)^2}\)</td><td>\(T = C_T\,\omega^2\) の比例係数</td></tr>
+      </tbody>
+      <caption>StampFly の主要パラメータ（機体仕様・実測に基づく）</caption>
+    </table>
+
+    <p>
+      プロペラの推力 \(T\) は角速度 \(\omega\) の 2 乗に比例します（\(T = C_T\,\omega^2\)）。
+      ホバリング中は 4 つのプロペラで重量を支えるので、1 発あたりの推力と角速度は
+    </p>
+    $$T_0 = \frac{mg}{4} = 90.3\ \mathrm{mN},\qquad \omega_0 = \sqrt{\frac{T_0}{C_T}} \approx 3004\ \mathrm{rad/s}\ (\approx 28{,}700\ \mathrm{rpm})$$
+    <p>
+      ここで、<strong>左側 2 発の角速度が右側よりわずか 0.1% だけ速かった</strong>としましょう
+      （\(\delta = 0.001\)）。推力は \(\omega\) の 2 乗に比例するので推力差は約 2 倍の 0.2%、
+      1 発あたり \(\Delta T \approx 2\delta T_0 = 0.18\ \mathrm{mN}\)。
+      <strong>わずか 18 mgf、米粒半分ほどの重さの差</strong>です。これが生むロールトルクと角加速度は
+    </p>
+    $$\tau = 2\,\Delta T\, d = mg\,\delta\,d \approx 8.3\times10^{-6}\ \mathrm{N\,m},\qquad
+      \dot{\omega}_{roll} = \frac{\tau}{I_{xx}} \approx 0.91\ \mathrm{rad/s^2}$$
+    <p>
+      トルクが一定なら傾き \(\phi\) は時間の 2 乗で増えます: \(\phi(t) = \frac{1}{2}\,(\tau/I_{xx})\,t^2\)。
+      各傾きへの到達時間は次の通りです。
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>傾き</th><th>1°</th><th>5°</th><th>10°</th><th>45°</th><th>90°（横転）</th></tr></thead>
+      <tbody><tr><td>到達時間</td><td>0.20 s</td><td>0.44 s</td><td>0.62 s</td><td>1.32 s</td><td><strong>1.86 s</strong></td></tr></tbody>
+      <caption>角速度 0.1% のズレを放置した場合の傾きの成長（StampFly、計算値）</caption>
+    </table>
+
+    <div class="note-box">
+      <strong>検算のポイント:</strong> ホバリング条件 \(C_T\omega_0^2 = mg/4\) を代入すると
+      トルクは \(\tau = mg\,\delta\,d\) となり、\(C_T\) と \(\omega_0\) は打ち消し合います。
+      つまりこの見積もりは推力係数の精度に依存しない、頑健な結果です。
+    </div>
+
+    <h2>1.4 実測すると、現実はもっと過酷だった</h2>
+    <p>
+      0.1% という仮定は、実は<strong>かなり控えめ</strong>です。実機の個体差を、
+      StampFly のホバリング飛行ログ（モータへの指令値 Duty の記録）から確かめてみます。
+      姿勢制御が働いてホバリングしているとき、（重心が中心にあれば）4 発の推力・回転数は
+      ほぼ等しいはずです。それなのに<strong>各モータに送られている Duty はモータごとに
+      はっきり違います</strong>。同じ回転数を出すのに必要な指令が個体ごとに違う——
+      これこそが個体差の直接の証拠です。
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>フライト</th><th>M1:前右<br>(CCW)</th><th>M2:後右<br>(CW)</th><th>M3:後左<br>(CCW)</th><th>M4:前左<br>(CW)</th><th>最大−最小</th></tr></thead>
+      <tbody>
+        <tr><td>6/27 ①</td><td>+2.4%</td><td>−5.1%</td><td>+6.3%</td><td>−3.5%</td><td>11.9%</td></tr>
+        <tr><td>6/27 ②</td><td>+7.1%</td><td>−6.9%</td><td>+10.2%</td><td>−10.4%</td><td>23.0%</td></tr>
+        <tr><td>6/27 ③</td><td>+12.5%</td><td>−13.2%</td><td>+16.5%</td><td>−15.7%</td><td>38.3%</td></tr>
+        <tr><td>6/29</td><td>−3.4%</td><td>+9.5%</td><td>+5.8%</td><td>−11.9%</td><td>24.4%</td></tr>
+      </tbody>
+      <caption>ホバリング中の平均 Duty の偏差（4 モータの平均値基準、StampFly 実測ログ 2026 年 6 月）。
+      CCW = 反時計回りプロペラ、CW = 時計回りプロペラ。</caption>
+    </table>
+
+    <p>
+      興味深いことに、<strong>反時計回り（CCW）の 2 発と時計回り（CW）の 2 発が
+      それぞれ同じ傾向を示し、グループ間の差が明確</strong>です（全 4 フライトで CCW 側が高め）。
+      ベンチ実測の Duty–回転数特性（ホバ付近で \(\omega \propto \mathrm{Duty}^{0.48}\)）を使って
+      「もし 4 発に同じ Duty を与えたら回転数が何%ズレるか」に換算すると、
+      <strong>回転数の個体差は 5〜16%、典型的には 10% 程度</strong>という結果になりました。
+      1.3 節で仮定した 0.1% の <strong>50〜150 倍</strong>です。
+      この実測レベルの個体差を放置すると、横転までの時間は
+      <strong>0.3〜1.5 秒</strong>まで縮みます。
+    </p>
+    <p>
+      人間の視覚反応はおよそ 0.2 秒。反応した瞬間にはもう傾きは手遅れの領域に入っています。
+      しかも仮に間に合ったとしても、必要な操作は「4 つのモータの推力差を 1% 未満の精度で、
+      連続的に、飛んでいる間ずっと補正し続ける」こと。鉛筆を指先で立て続けるのと同じ構造の
+      不安定平衡です。<strong>これは人間の反射神経で追いつける仕事ではありません。</strong>
+      毎秒何百回も姿勢を測り、即座に推力を補正できるコンピュータにしかできない仕事です。
+    </p>
+
+    <h2>1.5 体感する: 個体差シミュレータ</h2>
+    <p>
+      ここまでの計算をそのまま動かせるようにしました。左右のプロペラ回転数のズレ \(\delta\) を
+      スライダーで変えて、<strong>制御 OFF</strong> でどれだけ速くひっくり返るか、
+      <strong>制御 ON</strong>（姿勢を検知して推力差を自動補正）でどう変わるかを試してみてください。
+      物理モデルと数値は 1.3 節の計算と同一です。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="simCanvas" width="720" height="420"></canvas>
+      <div class="sim-controls">
+        <button id="btnRun" class="primary">▶ スタート</button>
+        <button id="btnReset">↺ リセット</button>
+        <button id="btnCtl">制御: <span id="ctlState" class="ctl-state-off">OFF</span></button>
+        <label>回転数のズレ δ:
+          <input type="range" id="deltaSlider" min="0" max="100" value="0">
+          <span id="deltaVal">0.10%</span>
+        </label>
+        <label><input type="checkbox" id="slowMo"> スロー再生 (0.25×)</label>
+      </div>
+      <div class="sim-readout" id="readout">t = 0.00 s | φ = 0.0° | 制御OFFなら90°まで（理論値）: 1.86 s</div>
+    </div>
+
+    <p class="src">
+      シミュレーションの仮定: ロール1軸の剛体運動、空力減衰・並進運動との連成・センサ雑音や遅延は無視。
+      制御 ON は理想的な角度フィードバック（PID）で、モータ推力の上限は実機値でサチュレートします。
+      センサや遅延の現実については後の章で扱います。
+    </p>
+
+    <h2>1.6 なぜロータは 4 つなのか</h2>
+    <p>
+      章の締めくくりに、そもそもの機体構成の疑問——「なぜ 4 発か」——に答えます。
+      マルチコプタを三次元空間で自由に飛ばすために、最低限制御しなければならない量は
+      次の <strong>4 つ</strong>です。
+    </p>
+    <table class="data-table">
+      <thead><tr><th>制御したい量</th><th>実現の手段</th></tr></thead>
+      <tbody>
+        <tr><td>上下（推力の大きさ）</td><td>4 発の推力の合計を増減</td></tr>
+        <tr><td>X 軸回りの回転（ロール）</td><td>左右の推力差</td></tr>
+        <tr><td>Y 軸回りの回転（ピッチ）</td><td>前後の推力差</td></tr>
+        <tr><td>Z 軸回りの回転（ヨー）</td><td>プロペラの反トルクの差（詳しくは第2章）</td></tr>
+      </tbody>
+      <caption>マルチコプタが直接制御する 4 つの量</caption>
+    </table>
+    <p>
+      「前後左右の移動は？」と思うかもしれません。前後は<strong>機体を前に傾けると
+      推力ベクトルが前に傾き、その水平成分で前に進みます</strong>。左右も同様に、
+      傾けることで実現できます。つまり上下と三軸回りの回転の 4 つを制御できれば、
+      空間を自由に飛び回れるのです。
+    </p>
+    <p>
+      4 つの量を自由に制御できることを、<strong>自由度が 4</strong> であるといいます。
+      4 つの量を独立に操るには、<strong>自由に動かせる入力（プロペラ）が最低でも
+      同じ数だけ必要</strong>です。独立に制御できるプロペラが 4 つあれば、ちょうど 4 つの量を
+      操れる——これがロータが 4 つの理由です。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>飛行機や気球は、傾きを自動で戻す<strong>復元力</strong>を構造が生む（<strong>静安定</strong>）。</li>
+      <li>マルチコプタは固定翼を持たず復元力を作れないため、静安定がない。</li>
+      <li>プロペラ・モータの個体差による推力差は避けられず、放置すると StampFly は
+        計算上 0.1% のズレでも約 1.9 秒、実測レベルの個体差（回転数で 5〜16%）なら
+        1 秒前後でひっくり返る。</li>
+      <li>だから「姿勢を検知して推力差を打ち消す」フィードバック制御をコンピュータが担う。</li>
+      <li>制御すべき量は上下・ロール・ピッチ・ヨーの 4 つ。だから独立に動かせるロータが
+        最低 4 つ必要。</li>
+    </ul>
+    <p>
+      次章では、この 4 つの量と 4 つのプロペラを結びつける仕組み——ロータ配置と
+      推力・反トルク、そして「ミキシング」——を見ていきます。
+    </p>
+
+    <p class="src">
+      データの出所: StampFly 実機のホバリング飛行ログ（2026 年 6 月）、
+      モータ単体のベンチ実測（Duty–推力–回転数、2026 年 3 月）、機体仕様値。
+      計算の再現スクリプトは教材リポジトリの notes/calc/ にあります。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="../index.html">← 目次</a>
+      <span>第2章（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Roll divergence simulator / ロール発散シミュレータ
+  // Physics identical to notes/calc/roll_divergence.py
+  // 物理モデルは notes/calc/roll_divergence.py と同一
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    // --- StampFly parameters (provenance: see chapter text) ---
+    const G = 9.81;            // gravity [m/s^2]
+    const M = 0.0368;          // mass [kg]
+    const IXX = 9.16e-6;       // roll inertia [kg m^2]
+    const D = 0.023;           // lateral moment arm [m]
+    const T0 = M * G / 4;      // per-motor hover thrust [N]
+    const TMAX = 0.168;        // max thrust per motor [N] (firmware limit)
+
+    // --- PID attitude controller (ideal sensing) ---
+    // 理想センサ前提の PID 姿勢制御。ωn≈25rad/s, ζ≈0.9 相当
+    const KP = 625, KD = 45, KI = 3000;
+
+    // --- state / 状態 ---
+    let phi = 0, phidot = 0, integ = 0, t = 0;
+    let running = false, ctlOn = false, crashed = false;
+    let delta = 0.001;
+    let trace = [];            // [t, phi] history for the chart
+    let tauCtl = 0;            // last control torque (for drawing arrows)
+
+    const cv = document.getElementById('simCanvas');
+    const ctx = cv.getContext('2d');
+    const els = {
+      run: document.getElementById('btnRun'),
+      reset: document.getElementById('btnReset'),
+      ctl: document.getElementById('btnCtl'),
+      ctlState: document.getElementById('ctlState'),
+      slider: document.getElementById('deltaSlider'),
+      deltaVal: document.getElementById('deltaVal'),
+      slow: document.getElementById('slowMo'),
+      readout: document.getElementById('readout'),
+    };
+
+    // slider (0..100) -> delta 0.1%..15% on a log scale
+    // スライダーは対数スケールで 0.1%〜15% に対応
+    function sliderToDelta(v) {
+      const lo = Math.log10(0.001), hi = Math.log10(0.15);
+      return Math.pow(10, lo + (hi - lo) * v / 100);
+    }
+
+    function t90Theory(dlt) { return Math.sqrt(Math.PI * IXX / (M * G * dlt * D)); }
+
+    function reset() {
+      phi = 0; phidot = 0; integ = 0; t = 0; trace = [[0, 0]];
+      crashed = false; running = false; tauCtl = 0;
+      els.run.textContent = '▶ スタート';
+      updateReadout(); draw();
+    }
+
+    function updateReadout() {
+      const deg = phi * 180 / Math.PI;
+      let msg = 't = ' + t.toFixed(2) + ' s | φ = ' + deg.toFixed(1) + '°';
+      msg += ' | 制御OFFなら90°まで（理論値）: ' + t90Theory(delta).toFixed(2) + ' s';
+      if (crashed) msg += ' — 💥 横転しました';
+      els.readout.textContent = msg;
+    }
+
+    // --- physics step / 物理1ステップ ---
+    function step(dt) {
+      // disturbance torque from left/right speed mismatch (body-fixed)
+      // 左右回転数差による外乱トルク: τ = m g δ d
+      const tauDist = M * G * delta * D;
+      let tau = tauDist;
+      if (ctlOn) {
+        integ += phi * dt;
+        // PID torque, saturated by available differential thrust
+        // PIDトルク。左右推力差の物理上限でサチュレート
+        let u = -IXX * (KP * phi + KD * phidot + KI * integ);
+        const dTmax = Math.min(T0, TMAX - T0);       // per-motor headroom
+        const tauMax = 2 * dTmax * D;
+        u = Math.max(-tauMax, Math.min(tauMax, u));
+        tauCtl = u;
+        tau += u;
+      } else {
+        tauCtl = 0;
+      }
+      const acc = tau / IXX;
+      phidot += acc * dt;
+      phi += phidot * dt;
+      t += dt;
+      if (!crashed && Math.abs(phi) >= Math.PI / 2) {
+        phi = Math.sign(phi) * Math.PI / 2;
+        crashed = true; running = false;
+        els.run.textContent = '▶ スタート';
+      }
+    }
+
+    // --- drawing / 描画 ---
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    function arrow(x, y, dx, dy, color, w) {
+      const len = Math.hypot(dx, dy);
+      if (len < 1) return;
+      ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = w;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y + dy); ctx.stroke();
+      const a = Math.atan2(dy, dx), hs = 6 + w;
+      ctx.beginPath();
+      ctx.moveTo(x + dx, y + dy);
+      ctx.lineTo(x + dx - hs * Math.cos(a - 0.4), y + dy - hs * Math.sin(a - 0.4));
+      ctx.lineTo(x + dx - hs * Math.cos(a + 0.4), y + dy - hs * Math.sin(a + 0.4));
+      ctx.closePath(); ctx.fill();
+    }
+
+    function draw() {
+      const c = themeColors();
+      const W = cv.width, H = cv.height;
+      ctx.clearRect(0, 0, W, H);
+
+      // ----- top: drone cross-section / 上段: 機体正面図 -----
+      const cx = W / 2, cy = 150, armPx = 130;
+      ctx.save();
+      // horizon / 水平線
+      ctx.strokeStyle = c.border; ctx.setLineDash([6, 6]); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(40, cy); ctx.lineTo(W - 40, cy); ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.translate(cx, cy);
+      ctx.rotate(phi);   // positive phi = right side down in screen terms
+
+      // thrust arrows / 推力矢印（左右で長さが違う）
+      // left pair total thrust (with disturbance) + control differential
+      // per-motor control thrust delta: torque = 4*dCtl*D (2 motors up, 2 down)
+      // 制御トルクは4モータに分配: τ = 4·ΔT·d
+      const dCtl = tauCtl / (4 * D);
+      const TL = T0 * Math.pow(1 + delta, 2) + dCtl;  // per-prop, left
+      const TR = T0 - dCtl;                            // per-prop, right
+      const scale = 700;                           // N -> px
+      arrow(-armPx, -14, 0, -Math.max(8, TL * scale) + 0, '#c2373b', 3);
+      arrow(armPx, -14, 0, -Math.max(8, TR * scale) + 0, '#0a7d33', 3);
+
+      // body bar / 機体バー
+      ctx.fillStyle = c.fg;
+      ctx.beginPath();
+      if (ctx.roundRect) { ctx.roundRect(-armPx, -6, 2 * armPx, 12, 6); } else { ctx.rect(-armPx, -6, 2 * armPx, 12); }
+      ctx.fill();
+      // motors + props / モータとプロペラ
+      for (const s of [-1, 1]) {
+        ctx.fillStyle = c.accent;
+        ctx.fillRect(s * armPx - 7, -18, 14, 14);
+        ctx.strokeStyle = c.muted; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(s * armPx, -20, 34, 5, 0, 0, 2 * Math.PI); ctx.stroke();
+      }
+      // center body / 中央ボディ
+      ctx.fillStyle = c.accent;
+      ctx.beginPath(); ctx.arc(0, 0, 12, 0, 2 * Math.PI); ctx.fill();
+      ctx.restore();
+
+      // angle label / 角度表示
+      ctx.fillStyle = c.fg; ctx.font = 'bold 15px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillText('φ = ' + (phi * 180 / Math.PI).toFixed(1) + '°', 44, 40);
+      ctx.font = '12px sans-serif'; ctx.fillStyle = c.muted;
+      ctx.fillText('左推力（赤）', 44, 58);
+      ctx.fillText('右推力（緑）', 44, 74);
+      if (crashed) {
+        ctx.font = 'bold 22px sans-serif'; ctx.fillStyle = '#c2373b'; ctx.textAlign = 'center';
+        ctx.fillText('💥 横転 (t = ' + t.toFixed(2) + ' s)', cx, 52);
+      }
+
+      // ----- bottom: phi(t) chart / 下段: 傾きの時間履歴 -----
+      const gx = 60, gy = 270, gw = W - gx - 24, gh = 130;
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(gx, gy, gw, gh);
+      const tMax = Math.max(3, t);
+      const phiMax = 100; // deg
+      // guide lines at ±90°
+      for (const gdeg of [-90, 90]) {
+        const yy = gy + gh / 2 - (gdeg / phiMax) * (gh / 2);
+        ctx.strokeStyle = c.border; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(gx, yy); ctx.lineTo(gx + gw, yy); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(gdeg + '°', gx - 6, yy + 4);
+      }
+      ctx.fillStyle = c.muted; ctx.textAlign = 'right';
+      ctx.fillText('0°', gx - 6, gy + gh / 2 + 4);
+      ctx.textAlign = 'center';
+      ctx.fillText('時間 →  (' + tMax.toFixed(1) + ' s)', gx + gw / 2, gy + gh + 16);
+      // trace
+      ctx.strokeStyle = c.accent; ctx.lineWidth = 2;
+      ctx.beginPath();
+      for (let i = 0; i < trace.length; i++) {
+        const xx = gx + (trace[i][0] / tMax) * gw;
+        const yy = gy + gh / 2 - (trace[i][1] * 180 / Math.PI / phiMax) * (gh / 2);
+        if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+    }
+
+    // --- main loop / メインループ ---
+    let lastTs = null;
+    function frame(ts) {
+      if (running) {
+        if (lastTs === null) lastTs = ts;
+        let dtReal = Math.min(0.05, (ts - lastTs) / 1000);
+        lastTs = ts;
+        if (els.slow.checked) dtReal *= 0.25;
+        // substeps for numerical stability / 数値安定のためサブステップ
+        const sub = Math.max(1, Math.ceil(dtReal / 0.0005));
+        for (let i = 0; i < sub && !crashed; i++) step(dtReal / sub);
+        trace.push([t, phi]);
+        if (trace.length > 4000) trace.splice(0, trace.length - 4000);
+        updateReadout();
+        draw();
+      } else {
+        lastTs = null;
+      }
+      requestAnimationFrame(frame);
+    }
+
+    // --- UI events ---
+    els.run.addEventListener('click', () => {
+      if (crashed) reset();
+      running = !running;
+      els.run.textContent = running ? '⏸ 一時停止' : '▶ スタート';
+    });
+    els.reset.addEventListener('click', reset);
+    els.ctl.addEventListener('click', () => {
+      ctlOn = !ctlOn;
+      els.ctlState.textContent = ctlOn ? 'ON' : 'OFF';
+      els.ctlState.className = ctlOn ? 'ctl-state-on' : 'ctl-state-off';
+      integ = 0;
+    });
+    els.slider.addEventListener('input', () => {
+      delta = sliderToDelta(Number(els.slider.value));
+      els.deltaVal.textContent = (delta * 100).toFixed(2) + '%';
+      updateReadout();
+    });
+
+    // init
+    delta = sliderToDelta(0);
+    els.deltaVal.textContent = (delta * 100).toFixed(2) + '%';
+    reset();
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>
