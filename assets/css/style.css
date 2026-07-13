@@ -28,6 +28,17 @@
 
 * { box-sizing: border-box; }
 
+html {
+  /* Pin the base font size so text looks the same in any environment,
+     one size larger than the browser default (16px).
+     基準フォントを 18px に固定: 環境（ブラウザ既定値・OS設定）によらず
+     同じ大きさに見え、既定の 16px より一回り大きい。
+     以下のサイズ指定はすべて rem（この基準の倍率）なので全体が連動する。 */
+  font-size: 18px;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
 body {
   margin: 0;
   background: var(--bg);
