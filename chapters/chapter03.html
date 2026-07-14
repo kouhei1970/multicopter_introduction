@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第3章 運動のモデリング | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; width: 100%; }
+    .data-table caption { caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); padding-top: 0.4rem; text-align: left; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    .causal-chain { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: stretch; margin: 1.2rem 0; }
+    .causal-chain .step {
+      flex: 1 1 8rem; border: 1.5px solid var(--accent); border-radius: 8px;
+      background: var(--accent-soft); padding: 0.5rem 0.6rem; font-size: 0.84rem;
+      line-height: 1.5; min-width: 7.5rem;
+    }
+    .causal-chain .step .no { font-weight: 700; color: var(--accent); display: block; font-size: 0.76rem; }
+    /* ---- simulator ---- */
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-buttons { display: flex; flex-wrap: wrap; gap: 0.6rem; margin: 0 0 0.8rem; }
+    .sim-buttons button {
+      font: inherit; padding: 0.35rem 1rem; border-radius: 8px; border: 1.5px solid var(--accent);
+      background: var(--accent-soft); color: var(--fg); cursor: pointer;
+    }
+    .sim-buttons button.active { background: var(--accent); color: #fff; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 9rem; }
+    .sim-msg { margin-top: 0.6rem; font-size: 0.88rem; color: var(--fg-muted); min-height: 1.4em; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第3章</p>
+    <h1>運動のモデリング</h1>
+    <p class="subtitle">フルのニュートン・オイラー運動方程式を組み立てる</p>
+  </header>
+
+  <main>
+    <p>
+      第2章までで、機体への入力——総推力 \(F\) と 3 軸のトルク \(\boldsymbol{\tau}\)——を
+      作れるようになりました。この章では、その入力を受け取った機体がどう動くのか、
+      すなわち運動方程式を組み立てます。
+      ホバリング近傍の近似で済ませることもできますが、それでは勿体ない。
+      並進運動まで考えるなら、最初から<strong>フルのニュートン・オイラー運動方程式</strong>を
+      書いてしまうのが結局は見通しがよいのです。以降の章で使う線形化やカスケード制御は、
+      すべて「このフルモデルからの意図的な簡略化」として位置づけられます。
+    </p>
+
+    <h2>3.1 全体の見取り図</h2>
+    <p>
+      モデル全体は次の因果の連鎖です。この章が担当するのは後半の 2 ブロックです。
+    </p>
+    <div class="causal-chain" aria-label="モデル全体の因果連鎖">
+      <div class="step"><span class="no">第2章</span>指令 → ミキシング → 各モータ推力</div>
+      <div class="step"><span class="no">第2章</span>推力・反トルク → 合計の力 \(F\) とトルク \(\boldsymbol{\tau}\)</div>
+      <div class="step"><span class="no">この章</span>剛体の運動方程式 → 角速度・速度</div>
+      <div class="step"><span class="no">この章</span>運動学 → 姿勢・位置</div>
+    </div>
+    <p>
+      機体の状態は <strong>12 個の変数</strong>で表されます:
+      位置 \((x, y, z)\)、速度 \((v_x, v_y, v_z)\)、姿勢（ロール \(\phi\)、ピッチ \(\theta\)、ヨー \(\psi\)）、
+      角速度 \((p, q, r)\)。運動方程式とは、この 12 変数の時間微分を入力と現在の状態で書き切ることです。
+    </p>
+
+    <h2>3.2 二つの座標系をつなぐ: 回転行列</h2>
+    <p>
+      推力は機体に固定された向き（機体 \(z\) 軸の負方向）に出ますが、
+      重力は地面に固定された向き（NED の \(D\)、下向き）に働きます。
+      両者を同じ土俵に乗せるために、機体座標系のベクトルを慣性座標系（NED）へ変換する
+      <strong>回転行列</strong> \(R\) を使います。ZYX オイラー角（ヨー→ピッチ→ロールの順に回す）では
+    </p>
+    <div class="math-scroll">
+    $$R = R_z(\psi)\,R_y(\theta)\,R_x(\phi) =
+    \begin{pmatrix}
+      c_\theta c_\psi & s_\phi s_\theta c_\psi - c_\phi s_\psi & c_\phi s_\theta c_\psi + s_\phi s_\psi \\
+      c_\theta s_\psi & s_\phi s_\theta s_\psi + c_\phi c_\psi & c_\phi s_\theta s_\psi - s_\phi c_\psi \\
+      -s_\theta & s_\phi c_\theta & c_\phi c_\theta
+    \end{pmatrix}$$
+    </div>
+    <p class="src">\(c_\theta = \cos\theta,\ s_\theta = \sin\theta\) などの略記。</p>
+
+    <h2>3.3 並進運動 — ニュートンの運動方程式</h2>
+    <p>
+      慣性系で書いた並進の運動方程式は、重力・推力・空気抵抗の 3 つの力の和です:
+    </p>
+    <div class="math-scroll">
+    $$m\,\dot{\boldsymbol{v}} =
+      \underbrace{m g\,\hat{\boldsymbol{e}}_D}_{\text{重力}}
+      + \underbrace{R \begin{pmatrix}0\\0\\-F\end{pmatrix}}_{\text{推力（機体z軸の負方向）}}
+      - \underbrace{c\,\lVert\boldsymbol{v}\rVert\,\boldsymbol{v}}_{\text{空気抵抗（2乗則）}}$$
+    </div>
+    <p>
+      空気抵抗はオーソドックスに<strong>速度の 2 乗に比例する抗力（2乗則）</strong>を入れます。
+      係数は \(c = \frac{1}{2}\rho\,C_d\,A\)。StampFly では概算で
+      \(A \approx 0.0815 \times 0.031 \approx 2.5\times10^{-3}\ \mathrm{m^2}\)（前面投影面積）、
+      \(C_d \approx 1\)（鈍頭物体）とすると
+      \(c \approx 1.5\times10^{-3}\ \mathrm{N/(m/s)^2}\) です（未同定の概算値であることに注意）。
+    </p>
+    <p>
+      この式から、第1章で予告した「傾けて進む」が読み取れます。機体を傾けると
+      \(R\,(0,0,-F)^{\mathsf T}\) に水平成分が生まれ、機体は加速します。
+      速度が上がると抗力が 2 乗で増え、やがて釣り合って一定速度になります。
+      傾き \(\theta\) で水平に巡航するときの釣り合い速度は
+    </p>
+    $$v_{eq} = \sqrt{\frac{mg\tan\theta}{c}}
+      \qquad\text{（例: } \theta = 10^\circ \text{ で } v_{eq} \approx 6.4\ \mathrm{m/s}\text{）}$$
+
+    <div class="note-box">
+      <strong>コラム — モデルは常に近似:</strong>
+      実は空気抵抗の導入は、研究の現場でも悩みどころです。機体は鈍頭物体で姿勢によって
+      投影面積が変わり、プロペラの誘導流も抗力に影響します。「オーソドックスに 2 乗則」というのは
+      割り切りであって、真実そのものではありません。モデリングとは「制御の目的に足りる精度で、
+      できるだけ簡単に書く」営みだ、ということを覚えておいてください。
+    </div>
+
+    <h2>3.4 回転運動 — オイラーの運動方程式</h2>
+    <p>
+      回転は機体固定座標系で書くのが便利です（慣性テンソル \(I\) が一定になるため）。
+      機体の角運動量 \(I\boldsymbol{\omega}\) に加えて、高速で回る 4 つのロータの角運動量
+      \(\boldsymbol{h}\) も機体に乗っていることに注意すると:
+    </p>
+    <div class="math-scroll">
+    $$I\,\dot{\boldsymbol{\omega}}
+      + \underbrace{\boldsymbol{\omega}\times(I\boldsymbol{\omega})}_{\text{機体のジャイロ項}}
+      + \underbrace{\boldsymbol{\omega}\times\boldsymbol{h}}_{\text{ロータのジャイロ項}}
+      = \boldsymbol{\tau},
+      \qquad
+      \boldsymbol{h} = J_{mp}\sum_i \mathrm{dir}_i\,\omega_i\ \hat{\boldsymbol{e}}_z$$
+    </div>
+    <p>
+      StampFly の慣性テンソルはほぼ対角で
+      \(I = \mathrm{diag}(9.16,\ 13.3,\ 20.4)\times10^{-6}\ \mathrm{kg\,m^2}\)。
+      \(\boldsymbol{\tau}\) は第2章のアロケーション行列の出力です。
+    </p>
+    <p>
+      <strong>ロータのジャイロ項</strong>には StampFly ならではの面白い構造があります。
+      CW と CCW のロータが同数・同回転数なら角運動量が相殺して \(\boldsymbol{h} = 0\)。
+      つまりホバリング中はこの項は消えています。\(\boldsymbol{h}\) が顔を出すのは
+      <strong>ヨー指令で CW/CCW の回転数が割れたとき</strong>で、その状態で機体が
+      ロールやピッチの角速度を持つと、\(\boldsymbol{\omega}\times\boldsymbol{h}\) が
+      「指令していない軸」にトルクを漏らします。
+    </p>
+    <p>この項を入れる場合と入れない場合の差を、実際に数値で見積もった結果が次の表です。</p>
+
+    <table class="data-table">
+      <thead><tr><th>シナリオ</th><th>ジャイロトルク</th><th>制御トルク上限比</th></tr></thead>
+      <tbody>
+        <tr><td>穏やか（ヨー割り 2.5%・レート 1 rad/s）</td><td>6 µN·m</td><td>0.3%</td></tr>
+        <tr><td>中間（ヨー割り 12.5%・レート 5 rad/s）</td><td>151 µN·m</td><td>7.3%</td></tr>
+        <tr><td>激しい（ヨー割り 12.5%・レート 10 rad/s）</td><td>302 µN·m</td><td>14.5%</td></tr>
+      </tbody>
+      <caption>ロータジャイロトルクの大きさ（StampFly、制御トルク上限 2.08 mN·m に対する比率）</caption>
+    </table>
+    <p>
+      さらに、強いヨーとロールを同時にかける機動（0.2 秒）をフルモデルで積分して比べると、
+      ジャイロ項の有無で <strong>0.4 秒後に姿勢が 4〜7° 違う軌道</strong>になります。
+      ホバリング付近の解析では無視してよいが、機動飛行やシミュレータでは入れるべき項——
+      それが数値からの答えです。下の教材で、項を ON/OFF して確かめられます。
+    </p>
+
+    <h2>3.5 姿勢の運動学 — 角速度と姿勢角は別物</h2>
+    <p>
+      最後のピースは、機体の角速度 \((p, q, r)\) とオイラー角の変化率
+      \((\dot\phi, \dot\theta, \dot\psi)\) の関係です。同じものに見えますが、
+      \((p,q,r)\) は機体軸回り、オイラー角はそれぞれ別の中間軸回りの回転なので、
+      変換行列が挟まります:
+    </p>
+    <div class="math-scroll">
+    $$\begin{pmatrix} \dot\phi \\ \dot\theta \\ \dot\psi \end{pmatrix}
+    = \begin{pmatrix}
+        1 & \sin\phi\tan\theta & \cos\phi\tan\theta \\
+        0 & \cos\phi & -\sin\phi \\
+        0 & \sin\phi/\cos\theta & \cos\phi/\cos\theta
+      \end{pmatrix}
+      \begin{pmatrix} p \\ q \\ r \end{pmatrix}$$
+    </div>
+    <p>
+      この行列には \(\tan\theta\) と \(1/\cos\theta\) が入っています。
+      ピッチ \(\theta \to \pm90^\circ\) で発散——これが<strong>ジンバルロック</strong>です。
+      機体が真上や真下を向くと、ロールとヨーの回転軸が同じ向きに重なってしまい、
+      オイラー角では姿勢の変化を表しきれなくなります。
+      宙返りをする機体やシミュレータの内部表現には、この特異点のない
+      <strong>クォータニオン</strong>（4 つの数で回転を表す方法）を使います。
+      本教材でも、直感はオイラー角で作り、実装の章でクォータニオンに乗り換えます
+      （StampFly のファームウェアもクォータニオンで姿勢を持っています）。
+    </p>
+
+    <h2>3.6 体感する: フルモデルの解剖</h2>
+    <p>
+      この章の運動方程式をそのまま数値積分し、<strong>項ごとに ON/OFF</strong> できるようにしました。
+      シナリオは 2 つ。「機動」は強いヨーとロールを同時にかける 0.5 秒
+      （ロータジャイロ項の影響が見えます）。「巡航」は機体を傾けたまま飛ばし続ける 6 秒
+      （空気抵抗が速度を頭打ちにする様子が見えます）。
+      薄い線は全部入りのフルモデル。チェックを外すと、どの項がどれだけ効いていたかが分かります。
+    </p>
+
+    <div class="sim-panel">
+      <div class="sim-buttons">
+        <button id="scManeuver" class="active">機動シナリオ（0.5 s）</button>
+        <button id="scCruise">巡航シナリオ（6 s）</button>
+      </div>
+      <canvas id="modelCanvas" width="760" height="400"></canvas>
+      <div class="sim-opts">
+        <label><input type="checkbox" id="optRotor" checked> ロータジャイロ項 ω×h</label>
+        <label><input type="checkbox" id="optCross" checked> 機体ジャイロ項 ω×(Iω)</label>
+        <label><input type="checkbox" id="optDrag" checked> 空気抵抗 c|v|v</label>
+        <label id="tiltLabel" style="display:none">傾き θ:
+          <input type="range" id="optTilt" min="2" max="20" value="10"> <span id="tiltVal">10°</span>
+        </label>
+      </div>
+      <div class="sim-msg" id="modelMsg"></div>
+    </div>
+
+    <p class="src">
+      機動シナリオ: ロールトルク 3×10⁻⁴ N·m とヨー割り 12.5% を 0〜0.2 s に同時印加、以降は無入力。
+      巡航シナリオ: 傾き θ を保持したまま総推力 \(mg/\cos\theta\) で高度維持。
+      いずれも本文の式・StampFly の数値と同一（c は概算値）。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>機体の状態は 12 変数（位置・速度・姿勢・角速度）。運動方程式はその時間発展。</li>
+      <li>並進はニュートン: 重力 + 回転行列で傾けた推力 + 2乗則の空気抵抗（係数は概算、
+        釣り合い速度 \(v_{eq}=\sqrt{mg\tan\theta/c}\)）。</li>
+      <li>回転はオイラー: \(I\dot{\boldsymbol\omega} + \boldsymbol\omega\times(I\boldsymbol\omega)
+        + \boldsymbol\omega\times\boldsymbol h = \boldsymbol\tau\)。
+        ロータジャイロ項はホバでは消えるが、機動では 0.4 秒で姿勢 4〜7° 分の差になる。</li>
+      <li>角速度と姿勢角の間には変換行列が挟まり、ピッチ ±90° で特異（ジンバルロック）。
+        実装はクォータニオンで逃げる。</li>
+      <li>モデルは常に近似。「制御の目的に足りる精度で、できるだけ簡単に」が指針。</li>
+    </ul>
+    <p>
+      次章では、入力の源であるモータとプロペラそのものに潜り込みます。
+      推力と反トルクの応答、モータの一次遅れ、そして第2章で予告した
+      「積分器＋零点＋一次遅れ」のヨー軸モデルを導出します。
+    </p>
+
+    <p class="src">
+      データの出所: 機体仕様（慣性テンソル・寸法・\(J_{mp}\)）、
+      ジャイロ項の見積もりは notes/calc/gyro_effect.py（再現可能）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter02.html">← 第2章 機体のしくみ</a>
+      <span>第4章（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Full-model anatomy simulator / フルモデル解剖シミュレータ
+  // Integrates the chapter's Newton-Euler equations with per-term toggles.
+  // 本文のニュートン・オイラー方程式を項別トグル付きで数値積分する。
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    // --- StampFly parameters (provenance: chapter text) ---
+    const IXX = 9.16e-6, IYY = 13.3e-6, IZZ = 20.4e-6; // inertia [kg m^2]
+    const JMP = 2.01e-8;      // rotor+prop inertia [kg m^2]
+    const CT = 1.0e-8;        // thrust coefficient
+    const KAPPA = 9.71e-3;    // torque/thrust ratio [m]
+    const M = 0.0368, G = 9.81;
+    const CDRAG = 1.5e-3;     // quadratic drag coeff (rough estimate) [N/(m/s)^2]
+    const T0 = M * G / 4;
+    const OMEGA0 = Math.sqrt(T0 / CT);
+
+    const cv = document.getElementById('modelCanvas');
+    const ctx = cv.getContext('2d');
+    const $ = id => document.getElementById(id);
+    let scenario = 'maneuver';
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    // --- quaternion helpers / クォータニオン演算 ---
+    function qmul(a, b) {
+      return [a[0]*b[0]-a[1]*b[1]-a[2]*b[2]-a[3]*b[3],
+              a[0]*b[1]+a[1]*b[0]+a[2]*b[3]-a[3]*b[2],
+              a[0]*b[2]-a[1]*b[3]+a[2]*b[0]+a[3]*b[1],
+              a[0]*b[3]+a[1]*b[2]-a[2]*b[1]+a[3]*b[0]];
+    }
+    function eulerOf(q) {
+      const [w, x, y, z] = q;
+      return [Math.atan2(2*(w*x+y*z), 1-2*(x*x+y*y)),
+              Math.asin(Math.max(-1, Math.min(1, 2*(w*y-z*x)))),
+              Math.atan2(2*(w*z+x*y), 1-2*(y*y+z*z))];
+    }
+
+    // --- maneuver scenario: rotation only / 機動シナリオ（回転系） ---
+    // Roll pulse + hard yaw split for 0.2 s, coast to 0.5 s.
+    function simManeuver(useRotor, useCross) {
+      const DT = 5e-5, T_END = 0.5, T_PULSE = 0.2;
+      let p = 0, q_ = 0, r = 0, quat = [1, 0, 0, 0];
+      const out = [];
+      for (let t = 0; t < T_END; t += DT) {
+        const pulse = t < T_PULSE;
+        const tauX = pulse ? 3e-4 : 0;
+        const dw = pulse ? 0.125 * OMEGA0 : 0;
+        const tauZ = 8 * KAPPA * CT * OMEGA0 * dw;  // air reaction from split
+        const h = -4 * JMP * dw;                     // net rotor momentum (z)
+        const gx = useRotor ? q_ * h : 0;            // (ω×h)_x
+        const gy = useRotor ? -p * h : 0;            // (ω×h)_y
+        const cx = useCross ? (IZZ - IYY) * q_ * r : 0;
+        const cy = useCross ? (IXX - IZZ) * p * r : 0;
+        const cz = useCross ? (IYY - IXX) * p * q_ : 0;
+        p += ((tauX - cx - gx) / IXX) * DT;
+        q_ += ((0 - cy - gy) / IYY) * DT;
+        r += ((tauZ - cz) / IZZ) * DT;
+        const dq = qmul(quat, [0, p, q_, r]);
+        quat = quat.map((c, i) => c + 0.5 * dq[i] * DT);
+        const n = Math.hypot(...quat);
+        quat = quat.map(c => c / n);
+        if (out.length < Math.floor(t / 0.002)) {
+          const [ph, th] = eulerOf(quat);
+          out.push([t, ph * 180 / Math.PI, th * 180 / Math.PI]);
+        }
+      }
+      return out;   // [t, roll deg, pitch deg]
+    }
+
+    // --- cruise scenario: translation only / 巡航シナリオ（並進系） ---
+    // Attitude held at tilt θ, thrust mg/cosθ (altitude hold), speed builds.
+    function simCruise(useDrag, tiltDeg) {
+      const DT = 1e-3, T_END = 6;
+      const th = tiltDeg * Math.PI / 180;
+      const F = M * G / Math.cos(th);
+      let v = 0;   // horizontal speed [m/s]
+      const out = [];
+      for (let t = 0; t < T_END; t += DT) {
+        const drag = useDrag ? (CDRAG / M) * v * v : 0;
+        v += (G * Math.tan(th) - drag) * DT;   // horizontal accel = F·sinθ/m − drag/m
+        if (out.length < Math.floor(t / 0.02)) out.push([t, v]);
+      }
+      return out;   // [t, speed]
+    }
+
+    // --- chart drawing / チャート描画 ---
+    function drawAxes(x0, y0, w, h, xMax, yMin, yMax, xLabel, yLabel) {
+      const c = themeColors();
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      // zero line
+      if (yMin < 0 && yMax > 0) {
+        const yy = y0 + h * (yMax / (yMax - yMin));
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+        ctx.setLineDash([]);
+      }
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(xLabel, x0 + w / 2, y0 + h + 18);
+      ctx.textAlign = 'right';
+      ctx.fillText(String(yMax), x0 - 6, y0 + 10);
+      ctx.fillText(String(yMin), x0 - 6, y0 + h);
+      ctx.save();
+      ctx.translate(x0 - 34, y0 + h / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0);
+      ctx.restore();
+    }
+
+    function plot(data, col, x0, y0, w, h, xMax, yMin, yMax, color, dashed, width) {
+      ctx.strokeStyle = color; ctx.lineWidth = width;
+      if (dashed) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      let started = false;
+      for (const row of data) {
+        const xx = x0 + (row[0] / xMax) * w;
+        const val = Math.max(yMin, Math.min(yMax, row[col]));
+        const yy = y0 + h * ((yMax - val) / (yMax - yMin));
+        if (!started) { ctx.moveTo(xx, yy); started = true; } else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    function legend(items, x, y) {
+      const c = themeColors();
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+      let xx = x;
+      for (const [label, color, dashed] of items) {
+        ctx.strokeStyle = color; ctx.lineWidth = dashed ? 1.5 : 2.5;
+        if (dashed) ctx.setLineDash([5, 4]);
+        ctx.beginPath(); ctx.moveTo(xx, y - 4); ctx.lineTo(xx + 26, y - 4); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.fg;
+        ctx.fillText(label, xx + 32, y);
+        xx += 42 + ctx.measureText(label).width;
+      }
+    }
+
+    function redraw() {
+      const c = themeColors();
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      const msg = $('modelMsg');
+      if (scenario === 'maneuver') {
+        const full = simManeuver(true, true);
+        const cur = simManeuver($('optRotor').checked, $('optCross').checked);
+        const x0 = 60, y0 = 40, w = 660, h = 300;
+        drawAxes(x0, y0, w, h, 0.5, -60, 60, '時間 [s]（入力は最初の0.2 s）', '姿勢角 [deg]');
+        plot(full, 1, x0, y0, w, h, 0.5, -60, 60, c.accent, true, 1.5);
+        plot(full, 2, x0, y0, w, h, 0.5, -60, 60, '#c2373b', true, 1.5);
+        plot(cur, 1, x0, y0, w, h, 0.5, -60, 60, c.accent, false, 2.5);
+        plot(cur, 2, x0, y0, w, h, 0.5, -60, 60, '#c2373b', false, 2.5);
+        legend([['ロール（選択中）', c.accent, false], ['ピッチ（選択中）', '#c2373b', false],
+                ['フルモデル', c.muted, true]], x0, 28);
+        const dEnd = cur[cur.length - 1], fEnd = full[full.length - 1];
+        msg.textContent = `t = 0.5 s: 選択中モデルとフルモデルの差 Δroll = ${(dEnd[1] - fEnd[1]).toFixed(1)}°, Δpitch = ${(dEnd[2] - fEnd[2]).toFixed(1)}°`;
+      } else {
+        const tilt = Number($('optTilt').value);
+        $('tiltVal').textContent = tilt + '°';
+        const full = simCruise(true, tilt);
+        const cur = simCruise($('optDrag').checked, tilt);
+        const x0 = 60, y0 = 40, w = 660, h = 300;
+        const vmax = 12;
+        drawAxes(x0, y0, w, h, 6, 0, vmax, '時間 [s]', '水平速度 [m/s]');
+        // equilibrium speed guide / 釣り合い速度の目安線
+        const veq = Math.sqrt(M * G * Math.tan(tilt * Math.PI / 180) / CDRAG);
+        if (veq < vmax) {
+          const yy = y0 + h * (1 - veq / vmax);
+          ctx.strokeStyle = c.muted; ctx.setLineDash([2, 4]);
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+          ctx.fillText(`v_eq = ${veq.toFixed(1)} m/s`, x0 + 8, yy - 6);
+        }
+        plot(full, 1, x0, y0, w, h, 6, 0, vmax, c.muted, true, 1.5);
+        plot(cur, 1, x0, y0, w, h, 6, 0, vmax, c.accent, false, 2.5);
+        legend([['選択中モデル', c.accent, false], ['フルモデル（抵抗あり）', c.muted, true]], x0, 28);
+        msg.textContent = $('optDrag').checked
+          ? '空気抵抗があると速度は釣り合い速度に収束します。傾きを変えて v_eq の変化も見てください。'
+          : '空気抵抗を切ると速度は際限なく増え続けます——2乗則が「頭打ち」を作っていたことが分かります。';
+      }
+    }
+
+    // --- UI events ---
+    $('scManeuver').addEventListener('click', () => {
+      scenario = 'maneuver';
+      $('scManeuver').classList.add('active'); $('scCruise').classList.remove('active');
+      $('tiltLabel').style.display = 'none';
+      redraw();
+    });
+    $('scCruise').addEventListener('click', () => {
+      scenario = 'cruise';
+      $('scCruise').classList.add('active'); $('scManeuver').classList.remove('active');
+      $('tiltLabel').style.display = 'flex';
+      redraw();
+    });
+    for (const id of ['optRotor', 'optCross', 'optDrag']) $(id).addEventListener('change', redraw);
+    $('optTilt').addEventListener('input', redraw);
+
+    redraw();
+  })();
+  </script>
+</body>
+</html>
