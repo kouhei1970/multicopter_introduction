@@ -33,10 +33,13 @@ import numpy as np
 
 
 def tape_pulses(t, v, hi_off=0.15, lo_frac=0.55):
-    """Detect tape pulses with auto thresholds. テープパルス検出（自動閾値）"""
+    """Detect the tape pulse (deepest dip per revolution).
+    テープパルス検出: 全ディップを拾い、隣接より深いものだけをテープと判定。
+    （教訓 2026-07-15: 4枚ブレードが全部閾値を跨ぐ個体があり、固定閾値だと
+    4パルス/回転を拾って ω を4倍に誤る。テープ=グループ内で最深、で判別する）"""
     base = np.percentile(v, 95)
     vmin = v.min()
-    lo = vmin + lo_frac * (base - vmin)   # deep-dip threshold
+    lo = vmin + lo_frac * (base - vmin)   # generous dip threshold / 緩めの閾値
     hi = base - hi_off
     s = np.zeros(len(v), dtype=np.int8)
     s[v > hi] = 1
@@ -44,14 +47,31 @@ def tape_pulses(t, v, hi_off=0.15, lo_frac=0.55):
     nz = np.flatnonzero(s)
     sv = s[nz]
     chg = np.flatnonzero(np.diff(sv) != 0)
-    edges = t[nz[chg + 1][sv[chg + 1] == -1]]
+    starts = nz[chg + 1][sv[chg + 1] == -1]
+    ends_i = nz[chg + 1][sv[chg + 1] == 1]
+    # dip list with depth / 各ディップの時刻と深さ
+    dips_t, dips_d = [], []
+    j = 0
+    for a in starts:
+        while j < len(ends_i) and ends_i[j] <= a:
+            j += 1
+        b = ends_i[j] if j < len(ends_i) else len(v)
+        i = a + int(np.argmin(v[a:b]))
+        dips_t.append(t[i]); dips_d.append(v[i])
+    dips_t = np.array(dips_t); dips_d = np.array(dips_d)
+    # tape = deeper than BOTH neighbours / 両隣より深い = テープ
+    if len(dips_t) < 3:
+        return dips_t
+    tape = np.zeros(len(dips_t), dtype=bool)
+    tape[1:-1] = (dips_d[1:-1] < dips_d[:-2]) & (dips_d[1:-1] < dips_d[2:])
+    edges = dips_t[tape]
     # glitch merge / 異常間隔の併合
     keep = np.ones(len(edges), dtype=bool)
     for i in range(1, len(edges)):
         lo_i = max(0, i - 8)
         if i - lo_i >= 2:
             med = np.median(np.diff(edges[lo_i:i + 1]))
-            if (edges[i] - edges[i - 1]) < 0.3 * med:
+            if (edges[i] - edges[i - 1]) < 0.5 * med:
                 keep[i] = False
     return edges[keep]
 
