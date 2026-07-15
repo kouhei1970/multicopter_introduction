@@ -27,7 +27,9 @@ identical in both runs -> cancels in the comparison), aero damping,
 translation coupling, thrust change from the roll pulse (superimposed torque).
 
 Parameters: same provenance as roll_divergence.py, plus
-  J_mp = 2.01e-8 kg·m² (rotor+prop inertia, sf_algo_control/motor_model.cpp)
+  J_mp = 5.31e-8 kg·m² (rotor+prop TOTAL inertia; authoritative value from
+         sf_sandbox/paper/sf_motordriver.tex Table. 旧版はfirmwareの2.01e-8を
+         使用していたが、論文により 2.01e-8 はプロペラ単体と判明し修正)
   I = diag(9.16e-6, 13.3e-6, 20.4e-6) kg·m² (kSpecInertia)
 """
 
@@ -35,7 +37,7 @@ import math
 
 # --- parameters ---
 IXX, IYY, IZZ = 9.16e-6, 13.3e-6, 20.4e-6   # body inertia [kg m^2]
-JMP = 2.01e-8        # rotor+prop inertia [kg m^2]
+JMP = 5.31e-8        # rotor+prop total inertia [kg m^2] (paper value)
 CT = 1.0e-8          # thrust coefficient [N/(rad/s)^2]
 KAPPA = 9.71e-3      # torque/thrust ratio [m]
 M, G, D = 0.0368, 9.81, 0.023

@@ -164,15 +164,15 @@
     <table class="data-table">
       <thead><tr><th>シナリオ</th><th>ジャイロトルク</th><th>制御トルク上限比</th></tr></thead>
       <tbody>
-        <tr><td>穏やか（ヨー割り 2.5%・レート 1 rad/s）</td><td>6 µN·m</td><td>0.3%</td></tr>
-        <tr><td>中間（ヨー割り 12.5%・レート 5 rad/s）</td><td>151 µN·m</td><td>7.3%</td></tr>
-        <tr><td>激しい（ヨー割り 12.5%・レート 10 rad/s）</td><td>302 µN·m</td><td>14.5%</td></tr>
+        <tr><td>穏やか（ヨー割り 2.5%・レート 1 rad/s）</td><td>16 µN·m</td><td>0.8%</td></tr>
+        <tr><td>中間（ヨー割り 12.5%・レート 5 rad/s）</td><td>399 µN·m</td><td>19.2%</td></tr>
+        <tr><td>激しい（ヨー割り 12.5%・レート 10 rad/s）</td><td>798 µN·m</td><td>38.4%</td></tr>
       </tbody>
       <caption>ロータジャイロトルクの大きさ（StampFly、制御トルク上限 2.08 mN·m に対する比率）</caption>
     </table>
     <p>
       さらに、強いヨーとロールを同時にかける機動（0.2 秒）をフルモデルで積分して比べると、
-      ジャイロ項の有無で <strong>0.4 秒後に姿勢が 4〜7° 違う軌道</strong>になります。
+      ジャイロ項の有無で <strong>0.4 秒後に姿勢が 13〜18° 違う軌道</strong>になります。
       ホバリング付近の解析では無視してよいが、機動飛行やシミュレータでは入れるべき項——
       それが数値からの答えです。下の教材で、項を ON/OFF して確かめられます。
     </p>
@@ -243,7 +243,7 @@
         釣り合い速度 \(v_{eq}=\sqrt{mg\tan\theta/c}\)）。</li>
       <li>回転はオイラー: \(I\dot{\boldsymbol\omega} + \boldsymbol\omega\times(I\boldsymbol\omega)
         + \boldsymbol\omega\times\boldsymbol h = \boldsymbol\tau\)。
-        ロータジャイロ項はホバでは消えるが、機動では 0.4 秒で姿勢 4〜7° 分の差になる。</li>
+        ロータジャイロ項はホバでは消えるが、機動では 0.4 秒で姿勢 13〜18° 分の差になる。</li>
       <li>角速度と姿勢角の間には変換行列が挟まり、ピッチ ±90° で特異（ジンバルロック）。
         実装はクォータニオンで逃げる。</li>
       <li>モデルは常に近似。「制御の目的に足りる精度で、できるだけ簡単に」が指針。</li>
@@ -280,7 +280,7 @@
 
     // --- StampFly parameters (provenance: chapter text) ---
     const IXX = 9.16e-6, IYY = 13.3e-6, IZZ = 20.4e-6; // inertia [kg m^2]
-    const JMP = 2.01e-8;      // rotor+prop inertia [kg m^2]
+    const JMP = 5.31e-8;      // rotor+prop TOTAL inertia [kg m^2] (paper-identified)
     const CT = 1.0e-8;        // thrust coefficient
     const KAPPA = 9.71e-3;    // torque/thrust ratio [m]
     const M = 0.0368, G = 9.81;
