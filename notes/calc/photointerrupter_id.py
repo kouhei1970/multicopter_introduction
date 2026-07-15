@@ -6,11 +6,14 @@ Data / データ:
   rigol-wfm-viewer/samples/NewFile3.wfm — DS1054Z, 5 MSa/s, 2.4 s, 12M points.
   反射式フォトインタラプタのパルス列。静止 → 定常回転への立ち上がり。
 
-Pulse structure found by inspection / 事前検査で判明したパルス構造:
-  - 定常部の間隔は完全に均一（~5.13 ms, mod-4 パターン無し）
-    → 基本は 1 パルス = 1 回転（README の「約11,700rpm」= 1/5.13ms×60 と整合）
-  - 立ち上がり中のみ「短・長」交互の余分な反射パルスが混入（和は滑らかに変化）
-    → 回転周期の連続性を使った後ろ向き併合で除去する
+Pulse structure (confirmed with teacher + amplitude analysis, 2026-07-15):
+パルス構造（先生の情報+振幅解析で確定）:
+  - プロペラは4枚 → 1回転に4ディップ（間隔~1.28ms@定常）
+  - うち1枚に反射テープ → そのディップだけ深く幅広い
+    （テープ: ~3.31-3.34V/339µs、他ブレード: 3.53-3.74V/~100µs）
+  - テープ→テープ間隔 = 1回転（定常5.13ms → 1225 rad/s = 11,694rpm）
+  - 検出閾値 LO=3.45V はテープのみを常に選択（他ブレード最深3.53Vと分離）
+  - 併合ロジックは保険として残す（万一他ブレードが閾値を跨いだ場合の防御）
 
 Identification / 同定:
   モデル: J·dω/dt = A − B_emf·ω − C_Q·ω²,  A = Kt·V·D/R（入力・未知）
@@ -41,7 +44,8 @@ v = np.asarray(ch.volts)
 t = np.asarray(ch.times)
 t = t - t[0]
 
-HI, LO = 4.05, 3.55                  # hysteresis thresholds [V]
+HI, LO = 3.90, 3.45                  # hysteresis thresholds [V]: tape pulse only
+                                     # テープパルスのみ検出（他ブレードは最深3.53V）
 s = np.zeros(len(v), dtype=np.int8)
 s[v > HI] = 1
 s[v < LO] = -1
@@ -122,6 +126,40 @@ for Jc in (2.01e-8, 5.31e-8):
                       bounds=([A_guess * 0.5, t0_guess - 0.3], [A_guess * 2.0, edges[0]]))
     rmsc = np.sqrt(np.mean(r.fun**2))
     print(f"  J = {Jc:.2e}: RMS = {rmsc:6.1f} rad/s ({100*rmsc/w_ss:.1f}% of ω_ss)")
+
+# ---------- 3b. duty-scaled back-EMF variant / Dutyスケール逆起電力モデル ----------
+# Config A (single low-side MOSFET + 100nF cap) has no regeneration path to the
+# battery during OFF; back-EMF braking may act only ~Duty of the time.
+# 構成Aは OFF 期間に電池への回生経路がなく、逆起電力ブレーキは ON 期間（≈Duty）
+# だけ効く可能性がある。その平均モデル: J·ω̇ = D·KtV/R − D·KtKe·ω/R − CQ·ω²
+V_BAT = 3.7
+KT = KE = 5.35e-4
+R_W = 0.593
+
+def sim_dutyscaled(J, D, t0, tq):
+    A = D * KT * V_BAT / R_W
+    B = D * KT * KE / R_W
+    dt = 1e-4
+    tt = np.arange(t0, tq[-1] + dt, dt)
+    om = np.zeros(len(tt))
+    for i in range(1, len(tt)):
+        o = om[i - 1]
+        f = lambda x: (A - B * x - CQ * x * x) / J
+        k1 = f(o); k2 = f(o + 0.5 * dt * k1); k3 = f(o + 0.5 * dt * k2); k4 = f(o + dt * k3)
+        om[i] = o + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    return np.interp(tq, tt, om, left=0.0)
+
+fit2 = least_squares(lambda p: sim_dutyscaled(p[0], p[1], p[2], t_f) - omega_f,
+                     x0=[5e-8, 0.1, t0_guess],
+                     bounds=([1e-9, 0.01, t0_guess - 0.3], [5e-7, 1.0, edges[0]]),
+                     xtol=1e-14, ftol=1e-14)
+J2, D2, t02 = fit2.x
+rms2 = np.sqrt(np.mean(fit2.fun**2))
+print("\n== duty-scaled back-EMF fit (drive model alternative) ==")
+print(f"  J = {J2:.3e} kg·m²  D = {D2:.4f}  RMS = {rms2:.1f} rad/s ({100*rms2/w_ss:.1f}%)")
+print("  → J の推定は電気駆動モデルの選択に強く依存する（結論は保留、下記の提案参照）")
+print("  提案: 電源カット後の惰性減速（coast-down）なら電気モデル不要:")
+print("        J·ω̇ = −CQ·ω² → 1/ω(t) が直線、傾き = CQ/J")
 
 # ---------- 4. plot / 図 ----------
 try:
