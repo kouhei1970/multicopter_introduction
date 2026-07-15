@@ -889,6 +889,31 @@ memory の正典情報更新。
 **J の謎・完全決着。残る未解決はヨー零点の符号（Q4-8）のみ
 （ベンチの開ループヨー差動ステップ実験待ち）。**
 
+### Q4-15. ecosystem への確定値反映（2026-07-15、先生の依頼「推奨の順番で」）
+
+**発見（影響調査の副産物）:** `yaw_axis_model.md` の冒頭に**2026-06-21の最終決着ヘッダ**が
+既に存在: ヨー零点は**LHP・最小位相（位相リード）で確定済み**（フライトログの
+per-tone 解析で +22〜32° のリードを実測、旧タイトルの RHP は符号誤りと明記）。
+→ **Q4-8 はこれで完全決着**（学生の第一原理解析と同一結論）。ベンチ実験は不要に。
+ただし本文§3〜§5と英語部に旧RHP記述が残る内部不整合があった。
+
+**実施内容（ecosystem コミット e731599, 0b66a57）:**
+1. 物理系ツール更新: tools/sysid（defaults/inertia/steady_state）を新値へ
+2. シミュレータのプラント物理更新: genesis/motor_model, vpython/core/motors + 2スクリプト
+3. ファーム鏡写し系は旧値維持+NOTE注記: reconstruct_duties, visualize_interactive,
+   acro_gain_conversion, torque_budget, genesis/control_allocation（ミキサ部）
+4. SIL plant.hpp: TODOブロックのみ（Ct・Am(∝Cq)・thrust_efficiency は Model Identity
+   較正で連動、単独差し替え不可。Am_new=Rm·Cq/Km=2.28e-8 等の導出値を記載）
+5. yaw_axis_model.md の内部不整合解消（符号訂正・§5改稿・英語部に決着ノート・
+   2026-07-15 再測定値の追記）、architecture 3文書に実測値ノート
+
+**新たに浮いた要決着事項（先生へ報告）:**
+- 電気系パラメータの2系統併存: firmware/シム系の Km=6.125e-4, Rm=0.34, Dm=3.69e-8,
+  Qf=2.76e-5 vs 論文の Ke=Kt=5.35e-4, R=0.593, B=0。τ_eff が 9.5ms vs 17.5ms に割れる。
+  現行個体の V-I-ω 1セット測定で決着可能。
+- コーストダウンのクーロン摩擦 τ_c=9.5e-6 vs firmware の Qf=2.76e-5（2.9倍差）
+- max_thrust: 0.168N（fw）/0.15N（sysid defaults）が併存、ベンチ実測は duty0.9 で 0.108N
+
 ### Q2. なぜロータは 4 つなのか？
 
 （学生の疑問: 揚力を稼ぐだけなら 1 つの大きなロータでもよさそう。
