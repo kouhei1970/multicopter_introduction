@@ -157,7 +157,35 @@ J2, D2, t02 = fit2.x
 rms2 = np.sqrt(np.mean(fit2.fun**2))
 print("\n== duty-scaled back-EMF fit (drive model alternative) ==")
 print(f"  J = {J2:.3e} kg·m²  D = {D2:.4f}  RMS = {rms2:.1f} rad/s ({100*rms2/w_ss:.1f}%)")
-print("  → J の推定は電気駆動モデルの選択に強く依存する（結論は保留、下記の提案参照）")
+
+# ---------- 3c. braking-fraction sweep / 実効ブレーキ率γスイープ ----------
+# 先生の情報 (2026-07-15): 実測は Duty=10% のステップ。構成Aはダイオード無しだが
+# C のため OFF 期間の一部でも電流が流れる（常にゼロではない）。
+# → 実効的な逆起電力ブレーキ率 γ は 0.1（ON期間のみ）〜 1.0（常時）の間。
+# ここでは γ を固定して A（実効入力・電圧ブーストを吸収）と J をフィットし、
+# J(γ) の全域と、形状が γ をどこまで判別できるか（RMS(γ)）を見る。
+def sim_gamma(J, A, gamma, t0, tq):
+    B = gamma * KT * KE / R_W
+    dt = 1e-4
+    tt = np.arange(t0, tq[-1] + dt, dt)
+    om = np.zeros(len(tt))
+    for i in range(1, len(tt)):
+        o = om[i - 1]
+        f = lambda x: (A - B * x - CQ * x * x) / J
+        k1 = f(o); k2 = f(o + 0.5 * dt * k1); k3 = f(o + 0.5 * dt * k2); k4 = f(o + dt * k3)
+        om[i] = o + dt / 6 * (k1 + 2 * k2 + 2 * k3 + k4)
+    return np.interp(tq, tt, om, left=0.0)
+
+print("\n== braking-fraction sweep (γ fixed, A/J/t0 fit) ==")
+print("   γ     J [kg·m²]    RMS [rad/s] (%)")
+for g in (0.0, 0.10, 0.15, 0.2, 0.3, 0.5, 1.0):
+    Ag = g * KT * KE / R_W * w_ss + CQ * w_ss**2
+    r = least_squares(lambda p: sim_gamma(p[0], p[1], g, p[2], t_f) - omega_f,
+                      x0=[6e-8, Ag, t0_guess],
+                      bounds=([1e-9, Ag * 0.5, t0_guess - 0.3], [5e-7, Ag * 2.0, edges[0]]),
+                      xtol=1e-14, ftol=1e-14)
+    rms_g = np.sqrt(np.mean(r.fun**2))
+    print(f"  {g:4.2f}   {r.x[0]:.3e}   {rms_g:6.1f} ({100*rms_g/w_ss:.2f}%)")
 print("  提案: 電源カット後の惰性減速（coast-down）なら電気モデル不要:")
 print("        J·ω̇ = −CQ·ω² → 1/ω(t) が直線、傾き = CQ/J")
 
