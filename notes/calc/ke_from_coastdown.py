@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
 """Ke identification from a 2-channel coast-down capture (no current sensing).
+
+!! 重要警告（2026-07-15判明）: RigolWFM の電圧復元は DS1054Z で 1.28倍過大
+!! （0.050 V/level を適用。正しくは V/div÷25.6=0.0391）。振幅を使う場合は
+!! 実機画面のカーソル読み（または電池等のDC基準）でスケールを較正すること。
+!! 時刻軸は正確（パルス解析は影響なし）。詳細: notes/qa_log.md Q4-20
 2ch コーストダウン収録からの逆起電力定数 Ke の同定（電流計測不要）。
 
 Usage / 使い方:
