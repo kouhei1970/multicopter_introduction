@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Ke identification from a 2-channel coast-down capture (no current sensing).
 
-!! 重要警告（2026-07-15判明）: RigolWFM の電圧復元は DS1054Z で 1.28倍過大
-!! （0.050 V/level を適用。正しくは V/div÷25.6=0.0391）。振幅を使う場合は
-!! 実機画面のカーソル読み（または電池等のDC基準）でスケールを較正すること。
-!! 時刻軸は正確（パルス解析は影響なし）。詳細: notes/qa_log.md Q4-20
+!! RigolWFM 振幅バグ（2026-07-15 機構特定・決定論）: 本ライブラリは全設定で
+!! 「1目盛=20レベル」として復元するが、DS1054Z の実約束は 25.6 レベル/目盛。
+!! → 全振幅が正確に 32/25=1.28 倍。傾き由来量には AMP_FIX=25/32 を適用済み。
+!! オフセット（絶対電圧）は別途注意。時刻軸は正確。詳細: notes/qa_log.md Q4-20
 2ch コーストダウン収録からの逆起電力定数 Ke の同定（電流計測不要）。
 
 Usage / 使い方:
@@ -35,6 +35,10 @@ import warnings
 warnings.filterwarnings("ignore")
 
 import numpy as np
+
+# RigolWFM amplitude fix: library decodes 20 levels/div, scope uses 25.6
+# ライブラリの振幅復元バグの固定補正（傾き由来量に適用）
+AMP_FIX = 25.0 / 32.0
 
 
 def tape_pulses(t, v, hi_off=0.15, lo_frac=0.55):
@@ -122,11 +126,11 @@ def main():
     x, y = om[coast], vbar[coast]
     A = np.vstack([x, np.ones_like(x)]).T
     (slope, icpt), res, *_ = np.linalg.lstsq(A, y, rcond=None)
-    ke = -slope
+    ke = -slope * AMP_FIX   # RigolWFM 20→25.6 levels/div 補正 / amplitude fix
     yhat = A @ [slope, icpt]
     r2 = 1 - np.sum((y - yhat) ** 2) / np.sum((y - y.mean()) ** 2)
     print("\n== result ==")
-    print(f"Ke = {ke:.4e} V·s/rad   (fit R² = {r2:.4f})")
+    print(f"Ke = {ke:.4e} V·s/rad   (fit R² = {r2:.4f}, AMP_FIX=25/32 適用済み)")
     print(f"intercept = {icpt:.3f} V  (V_BAT実測 {vbat:.3f} V と一致するはず)")
     print(f"判定: 論文系 Ke=5.35e-4 / firmware系 6.125e-4 に対して → {ke:.3e}")
     R_PAPER = 0.593
