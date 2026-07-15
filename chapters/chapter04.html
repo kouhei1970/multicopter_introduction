@@ -77,8 +77,9 @@
       <tbody>
         <tr><td>\(R,\ L\)</td><td>0.593 Ω / 0.788 µH</td>
           <td>LCR メータで巻線インピーダンスを計測（周波数依存損失は Foster 型回路で表現）</td></tr>
-        <tr><td>\(K_e\ (=K_t)\)</td><td>\(5.35\times10^{-4}\) V·s/rad</td>
-          <td>無負荷で電圧と回転数を実測し、線形回帰</td></tr>
+        <tr><td>\(K_e\ (=K_t)\)</td><td>\(6.82\times10^{-4}\) V·s/rad</td>
+          <td>コーストダウン中の<strong>開回路逆起電力</strong>を直接測定
+          （電源カット後は電流ゼロ → 端子電圧 \(=V_{BAT}-K_e\omega\) の直線フィット、R²=0.9995）</td></tr>
         <tr><td>\(C_T\)</td><td>\(6.7\times10^{-9}\ \mathrm{N/(rad/s)^2}\)</td>
           <td>ベンチの推力実測（Duty0.1 → 1.00 gf）×フォトインタラプタの回転数実測
           （同 Duty で 1209 rad/s）のペアから \(C_T = T/\omega^2\)</td></tr>
@@ -164,10 +165,10 @@
     <div class="math-scroll">
     $$\tau_e = \frac{L}{R} = 1.33\ \mathrm{\mu s}
       \qquad\ll\qquad
-      \tau_m = \frac{J\,R}{K_t K_e} \approx 28\ \mathrm{ms}$$
+      \tau_m = \frac{J\,R}{K_t K_e} \approx 18\ \mathrm{ms}$$
     </div>
     <p>
-      <strong>約 2 万倍</strong>の開きがあります。電流は回転数から見れば「一瞬で」定常に達するので、
+      <strong>約 1.3 万倍</strong>の開きがあります。電流は回転数から見れば「一瞬で」定常に達するので、
       電気系の式を \(i \approx (V\cdot\mathrm{Duty} - K_e\omega)/R\) と代数式に潰してよく、
       残る機械系だけの一次系になります。運動制御で注目すべきは機械的時定数——
       第2章から使ってきた「モータの一次遅れ」の正体です。
@@ -176,12 +177,12 @@
       ホバリング点まわりで線形化すると、実効時定数と減衰の内訳が見えます:
     </p>
     <div class="math-scroll">
-    $$\tau_{eff} = \frac{J}{\underbrace{K_t K_e / R}_{\text{逆起電力ブレーキ 62\%}}
-      + \underbrace{2 C_Q \omega_0}_{\text{プロペラ空力 38\%}}} \approx 18\ \mathrm{ms}$$
+    $$\tau_{eff} = \frac{J}{\underbrace{K_t K_e / R}_{\text{逆起電力ブレーキ 72\%}}
+      + \underbrace{2 C_Q \omega_0}_{\text{プロペラ空力 28\%}}} \approx 13\ \mathrm{ms}$$
     </div>
     <p>
       面白いのは減衰の内訳です。回転数の変化を押しとどめているのは、プロペラの空気抵抗
-      だけではなく、<strong>逆起電力による電気ブレーキが6割</strong>を占めています。
+      だけではなく、<strong>逆起電力による電気ブレーキが7割</strong>を占めています。
       モータは加速器であると同時に、自前のダンパでもあるのです。
       なおこの実効時定数は動作点に依存します——低回転・低Duty（電流が流れる時間が短く
       電気ブレーキが効かない）では 100 ms 超まで伸びることが、コーストダウン試験と
@@ -211,12 +212,12 @@
       「加速の反トルク」です。空気の反作用だけなら積分器＋一次遅れで終わるところに、
       \(J_{mp}\Delta\dot\omega\) の項が分子に \(s\) を持ち込んで零点を作ります。
       \(\tau_z > \tau_{eff}\) なので位相進み特性となり、ステップ指令の瞬間には
-      定常の約 2.6 倍のトルクが立ち上がって、モータの回転数が落ち着くにつれて
+      定常の約 3.6 倍のトルクが立ち上がって、モータの回転数が落ち着くにつれて
       空気のトルクに引き継がれます。
     </p>
     <div class="note-box">
       <strong>頑健な構造:</strong> 倍率
-      \(\tau_z/\tau_{eff} = 1 + K_tK_e/(R\cdot 2C_Q\omega_0) \approx 2.6\) は
+      \(\tau_z/\tau_{eff} = 1 + K_tK_e/(R\cdot 2C_Q\omega_0) \approx 3.6\) は
       \(J_{mp}\) に<strong>依存しません</strong>（分子と分母の \(J\) が約分されるため）。
       「加速の反トルクが立ち上がりを担い、初期に定常の数倍のトルクが出る」という構造は、
       慣性の測定誤差の影響を受けない結論です。\(J_{mp}\) が変わると
@@ -247,7 +248,7 @@
 
     <p class="src">
       条件: ヨー割り \(\Delta\omega_{cmd} = 180\ \mathrm{rad/s}\)（ホバ回転数の約5%）のステップ。
-      モデルと数値は本文と同一（\(C_Q = 4.10\times10^{-11}\), \(K_e = K_t = 5.35\times10^{-4}\),
+      モデルと数値は本文と同一（\(C_Q = 4.10\times10^{-11}\), \(K_e = K_t = 6.82\times10^{-4}\),
       \(R = 0.593\ \Omega\), \(I_{zz} = 2.04\times10^{-5}\ \mathrm{kg\,m^2}\)）。
       機体側のヨー空力減衰は無視（純粋な積分器）。
     </p>
@@ -255,13 +256,13 @@
     <h2>まとめ</h2>
     <ul>
       <li>モータ+プロペラは電気系と機械系の2本の微分方程式。ただし
-        \(\tau_e = 1.33\ \mathrm{\mu s} \ll \tau_m \approx 28\ \mathrm{ms}\)（約2万倍）なので、
-        運動制御では機械系だけの<strong>一次遅れ</strong>に潰せる（ホバ点の実効時定数 約18ms）。</li>
-      <li>回転数変化への減衰は、<strong>逆起電力ブレーキ 62%</strong> + プロペラ空力 38%。</li>
+        \(\tau_e = 1.33\ \mathrm{\mu s} \ll \tau_m \approx 18\ \mathrm{ms}\)（約1.3万倍）なので、
+        運動制御では機械系だけの<strong>一次遅れ</strong>に潰せる（ホバ点の実効時定数 約13ms）。</li>
+      <li>回転数変化への減衰は、<strong>逆起電力ブレーキ 72%</strong> + プロペラ空力 28%。</li>
       <li>パラメータは全部誰かが測った数字: LCRメータ、無負荷V–ω回帰、推力計測、
         モータ分解、写真デジタイズ、コーストダウン試験、2点吊り法。</li>
       <li>ヨー軸は<strong>積分器＋零点＋一次遅れ</strong>。零点の正体は加速の反トルクで、
-        立ち上がりに定常の約2.6倍のトルクを供給する（この倍率は \(J_{mp}\) に依存せず頑健）。</li>
+        立ち上がりに定常の約3.6倍のトルクを供給する（この倍率は \(J_{mp}\) に依存せず頑健）。</li>
       <li>旧推定の \(J\) には「プロペラ2倍・回転子10倍」の誤りがあり、3つの独立測定で訂正された。
         同定は「矛盾が見つかったら測り直す」の繰り返し。</li>
     </ul>
@@ -296,7 +297,7 @@
   (function () {
     'use strict';
 
-    const CQ = 4.10e-11, KE = 5.35e-4, KT = 5.35e-4, R = 0.593;
+    const CQ = 4.10e-11, KE = 6.82e-4, KT = 6.82e-4, R = 0.593;  // Ke: 2026-07 開回路EMF実測
     const CT = 6.7e-9, M = 0.0368, G = 9.81, IZZ = 20.4e-6;
     const OMEGA0 = Math.sqrt(M * G / 4 / CT);
     const DW_CMD = 180;            // yaw split step [rad/s] (~5% of hover speed)
@@ -369,9 +370,9 @@
 
       // --- top: torque breakdown / 上: トルク内訳 ---
       const x0 = 64, w = 660;
-      drawAxes(x0, 34, w, 150, T_END, 0, 700, 'トルク [µN·m]');
-      plot(cur.rows, 1, x0, 34, w, 150, 0, 700, c.accent, false);        // air
-      plot(cur.rows, 2, x0, 34, w, 150, 0, 700, '#c2373b', false);       // acc
+      drawAxes(x0, 34, w, 150, T_END, 0, 900, 'トルク [µN·m]');
+      plot(cur.rows, 1, x0, 34, w, 150, 0, 900, c.accent, false);        // air
+      plot(cur.rows, 2, x0, 34, w, 150, 0, 900, '#c2373b', false);       // acc
       ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
       ctx.fillStyle = c.accent; ctx.fillText('空気の反作用', x0 + 8, 30);
       ctx.fillStyle = '#c2373b'; ctx.fillText('加速の反トルク（零点）', x0 + 110, 30);
@@ -388,7 +389,7 @@
       $('yawReadout').textContent =
         `τ_eff = ${(cur.tauEff * 1e3).toFixed(1)} ms | τ_z = ${(tauZ * 1e3).toFixed(1)} ms | ` +
         `τ_z/τ_eff = ${(tauZ / cur.tauEff).toFixed(2)}（Jに依存せず一定） | ` +
-        (withZero ? '初期トルクは定常の約1.8倍から立ち上がる' : '零点なし: 立ち上がりのトルクブーストが消える');
+        (withZero ? '初期トルクは定常の約3.6倍から立ち上がる' : '零点なし: 立ち上がりのトルクブーストが消える');
     }
 
     $('optZero').addEventListener('change', redraw);
