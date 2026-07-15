@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第4章 モータとプロペラ | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; width: 100%; }
+    .data-table caption { caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); padding-top: 0.4rem; text-align: left; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    figure.diagram { margin: 1.5rem 0; text-align: center; }
+    figure.diagram svg { max-width: 100%; height: auto; }
+    figure.diagram figcaption { font-size: 0.8rem; color: var(--fg-muted); text-align: left; margin-top: 0.4rem; }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 10rem; }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第4章</p>
+    <h1>モータとプロペラ</h1>
+    <p class="subtitle">数字はどこから来るか — 同定・時定数・ヨー軸のダイナミクス</p>
+  </header>
+
+  <main>
+    <p>
+      ここまでの章で、\(C_T\)、\(C_Q\)、\(J_{mp}\)、モータの時定数……といった数字を
+      当たり前のように使ってきました。しかしこれらの値は、
+      <strong>ホビー用の小さなモータやプロペラのカタログには載っていません</strong>。
+      では、どこから来たのか。答えは「自分で測る」です。この章では StampFly のモータと
+      プロペラのモデルを組み立てながら、それぞれのパラメータが
+      <strong>どんな実験で得られたのか</strong>を紹介します。教科書の式に入っている数字は、
+      すべて誰かが工夫して測ったものだ——それがこの章の裏テーマです。
+    </p>
+
+    <h2>4.1 モータ+プロペラのモデル</h2>
+    <p>
+      StampFly のモータは 1 セル LiPo で駆動されるコアレスブラシ付き DC モータです
+      （コアレスモータでは、鉄心がなく<strong>コイルのカゴ自体が回転</strong>します）。
+      電気系と機械系の 2 本の微分方程式で書けます:
+    </p>
+    <div class="math-scroll">
+    $$\underbrace{L\,\frac{di}{dt} = V\cdot\mathrm{Duty} - R\,i - K_e\,\omega}_{\text{電気系（巻線）}}
+    \qquad
+    \underbrace{J\,\dot{\omega} = K_t\,i - C_Q\,\omega^2}_{\text{機械系（回転子+プロペラ）}}$$
+    </div>
+    <p>
+      \(K_e\) は逆起電力定数（回るほど電圧を押し返す）、\(K_t\) はトルク定数
+      （SI 単位系では \(K_t = K_e\)）、\(C_Q\omega^2\) はプロペラの空力負荷トルク——
+      第2章で登場した「空気の反作用」そのものです。
+    </p>
+
+    <h2>4.2 パラメータはこうして測られた</h2>
+    <table class="data-table">
+      <thead><tr><th>パラメータ</th><th>値</th><th>測り方</th></tr></thead>
+      <tbody>
+        <tr><td>\(R,\ L\)</td><td>0.593 Ω / 0.788 µH</td>
+          <td>LCR メータで巻線インピーダンスを計測（周波数依存損失は Foster 型回路で表現）</td></tr>
+        <tr><td>\(K_e\ (=K_t)\)</td><td>\(5.35\times10^{-4}\) V·s/rad</td>
+          <td>無負荷で電圧と回転数を実測し、線形回帰</td></tr>
+        <tr><td>\(C_T,\ C_Q\)</td><td>\(1.0\times10^{-8}\) / \(9.72\times10^{-11}\)</td>
+          <td>推力・トルクの直接計測</td></tr>
+        <tr><td>回転子の慣性 \(J_{rotor}\)</td><td>\(3.30\times10^{-8}\ \mathrm{kg\,m^2}\)</td>
+          <td><strong>モータを分解</strong>し、コイルかごの形状と質量を実測。鉄の軸と銅のコイルの
+          体積・密度から推算</td></tr>
+        <tr><td>プロペラの慣性 \(J_{prop}\)</td><td>\(2.01\times10^{-8}\ \mathrm{kg\,m^2}\)</td>
+          <td><strong>ブレードを数区分に切り分け</strong>、各区分を長方形と近似して回転中心回りの
+          慣性を計算し、合計</td></tr>
+        <tr><td>機体の慣性 \(I_{xx}, I_{yy}, I_{zz}\)</td><td>\((9.16,\ 13.3,\ 20.4)\times10^{-6}\)</td>
+          <td><strong>2点吊り法</strong>: 機体を2本の紐で吊り、捻り振子の周期から算出（下図）</td></tr>
+      </tbody>
+      <caption>StampFly のパラメータと同定方法（モータドライバ論文および機体同定より）</caption>
+    </table>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="2点吊り法の図解" font-family="sans-serif">
+        <!-- ceiling / 天井 -->
+        <line x1="140" y1="30" x2="420" y2="30" stroke="currentColor" stroke-width="3"/>
+        <g stroke="currentColor" stroke-width="1">
+          <line x1="150" y1="30" x2="140" y2="18"/><line x1="190" y1="30" x2="180" y2="18"/>
+          <line x1="230" y1="30" x2="220" y2="18"/><line x1="270" y1="30" x2="260" y2="18"/>
+          <line x1="310" y1="30" x2="300" y2="18"/><line x1="350" y1="30" x2="340" y2="18"/>
+          <line x1="390" y1="30" x2="380" y2="18"/>
+        </g>
+        <!-- strings / 紐2本 -->
+        <line x1="220" y1="30" x2="220" y2="180" stroke="#0b5cad" stroke-width="2"/>
+        <line x1="340" y1="30" x2="340" y2="180" stroke="#0b5cad" stroke-width="2"/>
+        <!-- length label L -->
+        <line x1="430" y1="30" x2="430" y2="180" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4"/>
+        <text x="440" y="110" font-size="16" fill="currentColor">紐の長さ L</text>
+        <!-- drone body (front view bar) / 機体 -->
+        <rect x="185" y="180" width="190" height="14" rx="7" fill="currentColor"/>
+        <circle cx="280" cy="187" r="16" fill="#0b5cad"/>
+        <ellipse cx="205" cy="176" rx="30" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <ellipse cx="355" cy="176" rx="30" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <!-- 2b label -->
+        <line x1="220" y1="215" x2="340" y2="215" stroke="currentColor" stroke-width="1"/>
+        <line x1="220" y1="209" x2="220" y2="221" stroke="currentColor" stroke-width="1"/>
+        <line x1="340" y1="209" x2="340" y2="221" stroke="currentColor" stroke-width="1"/>
+        <text x="255" y="235" font-size="16" fill="currentColor">吊り間隔 2b</text>
+        <!-- twist arrow / 捻り矢印 -->
+        <path d="M 280 145 A 40 12 0 1 1 320 157" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <polygon points="320,157 308,155 314,146" fill="#c2373b"/>
+        <text x="150" y="140" font-size="16" fill="#c2373b">水平に少し捻って離す</text>
+        <text x="120" y="275" font-size="16" fill="currentColor">→ 捻り振動の周期 T を測って　I = m·g·b²·T² / (4π²·L)</text>
+      </svg>
+      <figcaption>
+        2点吊り法（バイファイラ振子）: 機体を同じ長さ \(L\) の2本の紐で間隔 \(2b\) で吊り、
+        水平面内で少し捻って離すと、重力を復元力とする捻り振動が起きる。
+        周期 \(T\) を（複数周期の平均で）測れば、吊った軸回りの慣性モーメントが
+        \(I = \dfrac{m g b^2 T^2}{4\pi^2 L}\) で得られる。ヨー軸なら水平姿勢のまま、
+        ロール・ピッチ軸ならその軸が鉛直になる向きに吊り替えて測る。
+      </figcaption>
+    </figure>
+
+    <div class="note-box">
+      <strong>コラム — 数字を疑う:</strong>
+      実は、回転部の合計慣性 \(J_{mp} = J_{rotor} + J_{prop} = 5.31\times10^{-8}\ \mathrm{kg\,m^2}\)
+      には再測定の可能性があります。StampFly の前身機 <strong>AtomFly</strong> のモータの値と
+      混同している可能性が浮上したためです。また、この値と独立に、飛行制御ソフトが使う
+      時定数（約 20 ms）と物理モデルから出る時定数（後述、約 50 ms）にも食い違いが残っています。
+      決着をつけるのは新しい測定——ブレードの通過を反射式フォトインタラプタで非接触検出し、
+      ストレージオシロで<strong>回転数の過渡応答を直接記録する</strong>計画が進んでいます。
+      同定とは一度やって終わりではなく、矛盾が見つかるたびに測り直す営みです。
+      本章では \(J_{mp}\) 依存の数値を<strong>暫定値</strong>と明示し、
+      \(J_{mp}\) に依存しない頑健な結論を区別して示します。
+    </div>
+
+    <h2>4.3 二つの時定数 — なぜ「一次遅れ」で済むのか</h2>
+    <p>
+      4.1 節のモデルには微分方程式が 2 本あるのに、これまで「モータは一次遅れ」と
+      扱ってきました。その根拠は時定数の分離です:
+    </p>
+    <div class="math-scroll">
+    $$\tau_e = \frac{L}{R} = 1.33\ \mathrm{\mu s}
+      \qquad\ll\qquad
+      \tau_m = \frac{J\,R}{K_t K_e} \approx 110\ \mathrm{ms}$$
+    </div>
+    <p>
+      <strong>約 8 万倍</strong>の開きがあります。電流は回転数から見れば「一瞬で」定常に達するので、
+      電気系の式を \(i \approx (V\cdot\mathrm{Duty} - K_e\omega)/R\) と代数式に潰してよく、
+      残る機械系だけの一次系になります。運動制御で注目すべきは機械的時定数——
+      第2章から使ってきた「モータの一次遅れ」の正体です。
+    </p>
+    <p>
+      ホバリング点まわりで線形化すると、実効時定数と減衰の内訳が見えます:
+    </p>
+    <div class="math-scroll">
+    $$\tau_{eff} = \frac{J}{\underbrace{K_t K_e / R}_{\text{逆起電力ブレーキ 45\%}}
+      + \underbrace{2 C_Q \omega_0}_{\text{プロペラ空力 55\%}}} \approx 50\ \mathrm{ms}\quad(\text{暫定値})$$
+    </div>
+    <p>
+      面白いのは減衰の内訳です。回転数の変化を押しとどめているのは、プロペラの空気抵抗
+      だけではなく、<strong>逆起電力による電気ブレーキがほぼ半分</strong>を占めています。
+      モータは加速器であると同時に、自前のダンパでもあるのです。
+    </p>
+
+    <h2>4.4 ヨー軸の伝達関数 — 積分器＋零点＋一次遅れ</h2>
+    <p>
+      第2章で「反トルクは二つの物理現象」と学びました。これを伝達関数にすると、
+      二つの現象が数式の中のどこに座るかが見えます。ヨー指令でモータ角速度を
+      \(\Delta\omega\) だけ割る（CW を下げ CCW を上げる）ときの反トルクは、線形化すると
+    </p>
+    <div class="math-scroll">
+    $$\Delta\tau = \underbrace{4 J_{mp}\,\Delta\dot{\omega}}_{\text{加速の反トルク}}
+      + \underbrace{8 C_Q \omega_0\,\Delta\omega}_{\text{空気の反作用}}$$
+    </div>
+    <p>
+      モータの一次遅れ \(\Delta\omega(s) = \Delta\omega_{cmd}(s)/(\tau_{eff}\,s+1)\) と、
+      機体ヨー軸の積分 \(r(s) = \Delta\tau(s)/(I_{zz}\,s)\) をつなぐと:
+    </p>
+    <div class="math-scroll">
+    $$\frac{r(s)}{\Delta\omega_{cmd}(s)} = K\cdot\frac{\tau_z\,s + 1}{s\,(\tau_{eff}\,s + 1)},
+      \qquad \tau_z = \frac{J_{mp}}{2 C_Q \omega_0} \approx 91\ \mathrm{ms}\quad(\text{暫定値})$$
+    </div>
+    <p>
+      <strong>積分器＋零点＋一次遅れ</strong>。分子の零点 \(\tau_z s + 1\) の正体が
+      「加速の反トルク」です。空気の反作用だけなら積分器＋一次遅れで終わるところに、
+      \(J_{mp}\Delta\dot\omega\) の項が分子に \(s\) を持ち込んで零点を作ります。
+      \(\tau_z > \tau_{eff}\) なので位相進み特性となり、ステップ指令の瞬間には
+      定常の約 1.8 倍のトルクが立ち上がって、モータの回転数が落ち着くにつれて
+      空気のトルクに引き継がれます。
+    </p>
+    <div class="note-box">
+      <strong>頑健な結論と暫定の数値:</strong> 倍率
+      \(\tau_z/\tau_{eff} = 1 + K_tK_e/(R\cdot 2C_Q\omega_0) \approx 1.83\) は
+      \(J_{mp}\) に<strong>依存しません</strong>（分子と分母の \(J\) が約分されるため）。
+      つまり \(J_{mp}\) が再測定でいくつになっても、「加速の反トルクが立ち上がりを担い、
+      その初期の大きさは定常の約 1.8 倍」という構造は変わりません。
+      変わるのは \(\tau_z\)・\(\tau_{eff}\) の絶対値（応答の速さ）だけです。
+      下の教材の \(J_{mp}\) スライダーで、これを確かめてみてください。
+    </div>
+
+    <h2>4.5 体感する: ヨー応答と零点</h2>
+    <p>
+      ヨー指令（CW/CCW の回転数割り）をステップで入れたときの反トルクの内訳と
+      ヨー角速度の応答です。「加速の反トルク（零点）」のチェックを外すと、
+      立ち上がりの鋭さがどう失われるかを見てください。
+      \(J_{mp}\) スライダーは再測定で動きうる範囲を動かせます——
+      <strong>波形は伸び縮みしても、形（比率）は変わりません</strong>。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="yawCanvas" width="760" height="420"></canvas>
+      <div class="sim-opts">
+        <label><input type="checkbox" id="optZero" checked> 加速の反トルク（零点）を含める</label>
+        <label>\(J_{mp}\):
+          <input type="range" id="optJ" min="20" max="55" value="53">
+          <span id="jVal">5.3e-8</span> kg·m²
+        </label>
+      </div>
+      <div class="sim-readout" id="yawReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: ヨー割り \(\Delta\omega_{cmd} = 150\ \mathrm{rad/s}\)（ホバ回転数の5%）のステップ。
+      モデルと数値は本文と同一（\(C_Q = 9.72\times10^{-11}\), \(K_e = K_t = 5.35\times10^{-4}\),
+      \(R = 0.593\ \Omega\), \(I_{zz} = 2.04\times10^{-5}\ \mathrm{kg\,m^2}\)）。
+      機体側のヨー空力減衰は無視（純粋な積分器）。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>モータ+プロペラは電気系と機械系の2本の微分方程式。ただし
+        \(\tau_e = 1.33\ \mathrm{\mu s} \ll \tau_m \approx 110\ \mathrm{ms}\)（約8万倍）なので、
+        運動制御では機械系だけの<strong>一次遅れ</strong>に潰せる。</li>
+      <li>回転数変化への減衰は、プロペラ空力 55% + <strong>逆起電力ブレーキ 45%</strong>。</li>
+      <li>パラメータは全部誰かが測った数字: LCRメータ、無負荷V–ω回帰、推力・トルク計測、
+        モータ分解、ブレード切り分け、2点吊り法。</li>
+      <li>ヨー軸は<strong>積分器＋零点＋一次遅れ</strong>。零点の正体は加速の反トルクで、
+        立ち上がりに定常の約1.8倍のトルクを供給する（この倍率は \(J_{mp}\) に依存せず頑健）。</li>
+      <li>\(J_{mp}\) と時定数には未解決の食い違いがあり再測定を計画中。
+        同定は「矛盾が見つかったら測り直す」の繰り返し。</li>
+    </ul>
+    <p>
+      道具立てが揃いました。次章ではいよいよ制御に入ります——
+      レート制御から始めて、PID でマルチコプタの姿勢を安定させます。
+    </p>
+
+    <p class="src">
+      データの出所: モータドライバ論文（sf_motordriver、R/L/Ke/C_Q/J の同定値）、
+      機体慣性は2点吊り法による実測。計算の再現は notes/calc/motor_time_constants.py。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter03.html">← 第3章 運動のモデリング</a>
+      <span>第5章（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Yaw response with/without the zero / ヨー応答と零点の教材
+  // r(s)/Δω_cmd = K(τz s+1)/(s(τeff s+1)) を時間領域で数値積分。
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const CQ = 9.72e-11, KE = 5.35e-4, KT = 5.35e-4, R = 0.593;
+    const CT = 1.0e-8, M = 0.0368, G = 9.81, IZZ = 20.4e-6;
+    const OMEGA0 = Math.sqrt(M * G / 4 / CT);
+    const DW_CMD = 150;            // yaw split step [rad/s]
+    const D_EMF = KT * KE / R;     // back-EMF damping
+    const D_AERO = 2 * CQ * OMEGA0;
+    const T_END = 0.4, DT = 1e-4;
+
+    const cv = document.getElementById('yawCanvas');
+    const ctx = cv.getContext('2d');
+    const $ = id => document.getElementById(id);
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    // simulate torque components and yaw rate / トルク内訳とヨーレートを積分
+    function simulate(J, withZero) {
+      const tauEff = J / (D_EMF + D_AERO);
+      let dw = 0, r = 0;
+      const rows = [];
+      for (let t = 0; t < T_END; t += DT) {
+        const dwDot = (DW_CMD - dw) / tauEff;   // motor first-order lag
+        const tAir = 8 * CQ * OMEGA0 * dw;      // air reaction torque (4 motors)
+        const tAcc = withZero ? 4 * J * dwDot : 0;  // acceleration reaction
+        r += ((tAir + tAcc) / IZZ) * DT;
+        dw += dwDot * DT;
+        if (rows.length < Math.floor(t / 0.001)) rows.push([t, tAir * 1e6, tAcc * 1e6, r * 180 / Math.PI]);
+      }
+      return { rows, tauEff };
+    }
+
+    function drawAxes(x0, y0, w, h, xMax, yMin, yMax, yLabel) {
+      const c = themeColors();
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(String(yMax), x0 - 6, y0 + 10);
+      ctx.fillText(String(yMin), x0 - 6, y0 + h);
+      ctx.save(); ctx.translate(x0 - 40, y0 + h / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0); ctx.restore();
+    }
+
+    function plot(rows, col, x0, y0, w, h, yMin, yMax, color, dashed) {
+      ctx.strokeStyle = color; ctx.lineWidth = dashed ? 1.5 : 2.5;
+      if (dashed) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      rows.forEach((row, i) => {
+        const xx = x0 + (row[0] / T_END) * w;
+        const yy = y0 + h * ((yMax - Math.max(yMin, Math.min(yMax, row[col]))) / (yMax - yMin));
+        if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+      });
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    function redraw() {
+      const c = themeColors();
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      const J = Number($('optJ').value) * 1e-9;
+      $('jVal').textContent = (J * 1e8).toFixed(1) + 'e-8';
+      const withZero = $('optZero').checked;
+      const cur = simulate(J, withZero);
+      const ref = simulate(J, true);
+
+      // --- top: torque breakdown / 上: トルク内訳 ---
+      const x0 = 64, w = 660;
+      drawAxes(x0, 34, w, 150, T_END, 0, 700, 'トルク [µN·m]');
+      plot(cur.rows, 1, x0, 34, w, 150, 0, 700, c.accent, false);        // air
+      plot(cur.rows, 2, x0, 34, w, 150, 0, 700, '#c2373b', false);       // acc
+      ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+      ctx.fillStyle = c.accent; ctx.fillText('空気の反作用', x0 + 8, 30);
+      ctx.fillStyle = '#c2373b'; ctx.fillText('加速の反トルク（零点）', x0 + 110, 30);
+
+      // --- bottom: yaw rate / 下: ヨーレート ---
+      drawAxes(x0, 232, w, 150, T_END, 0, 250, 'ヨーレート [deg/s]');
+      plot(ref.rows, 3, x0, 232, w, 150, 0, 250, c.muted, true);         // with-zero ref
+      plot(cur.rows, 3, x0, 232, w, 150, 0, 250, c.accent, false);
+      ctx.fillStyle = c.muted; ctx.fillText('－－ 零点あり（参照）', x0 + 8, 228);
+      ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+      ctx.fillText('時間 [s]（0〜' + T_END + ' s、ヨー割りステップ入力）', x0 + w / 2, 404);
+
+      const tauZ = J / D_AERO;
+      $('yawReadout').textContent =
+        `τ_eff = ${(cur.tauEff * 1e3).toFixed(1)} ms | τ_z = ${(tauZ * 1e3).toFixed(1)} ms | ` +
+        `τ_z/τ_eff = ${(tauZ / cur.tauEff).toFixed(2)}（Jに依存せず一定） | ` +
+        (withZero ? '初期トルクは定常の約1.8倍から立ち上がる' : '零点なし: 立ち上がりのトルクブーストが消える');
+    }
+
+    $('optZero').addEventListener('change', redraw);
+    $('optJ').addEventListener('input', redraw);
+    redraw();
+  })();
+  </script>
+</body>
+</html>
