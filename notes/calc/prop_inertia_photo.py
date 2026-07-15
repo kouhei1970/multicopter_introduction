@@ -133,6 +133,22 @@ print(f"I_prop   = {I_total:.3e} kg·m²")
 print(f"radius of gyration (blades): {np.sqrt(I_b_px/(N_BLADES*M_BLADE))*1e3:.2f} mm")
 print(f"（参考）旧推定 J_prop = 2.01e-8 との比: {I_total/2.01e-8:.2f}")
 
+# ---------- 4b. pitch-projection correction / ピッチ投影補正 ----------
+# 刻印 "1209" = 直径1.2インチ(30.5mm)・ピッチ0.9インチ(22.86mm) と読む（先生の読み、2026-07-15）。
+# 取付角 β(r) = arctan(p/(2πr))。上面投影では真の面素 dA が cosβ 倍に縮むので、
+# 質量∝真面積（厚み一様）なら投影面密度は 1/cosβ(r) で根元ほど大きい。
+# 補正: 各画素を w=1/cosβ(r) で重み付けし、総質量で正規化して I = M·⟨r²⟩_w を計算。
+PITCH_MM = 0.9 * 25.4
+wgt = np.sqrt(1.0 + (PITCH_MM / (2 * np.pi * np.maximum(r_blade, 1.0))) ** 2)
+r2w = np.sum(wgt * (r_blade * 1e-3) ** 2) / np.sum(wgt)
+I_b_pitch = (N_BLADES * M_BLADE) * r2w
+print(f"\npitch-corrected (p=0.9in): I_blades = {I_b_pitch:.3e} kg·m² "
+      f"({100*(I_b_pitch/I_b_px-1):+.1f}% vs 無補正)")
+print(f"pitch-corrected I_prop = {I_b_pitch + I_h_px:.3e} kg·m²")
+print(f"β(r): root(4mm) {np.degrees(np.arctan(PITCH_MM/(2*np.pi*4))):.0f}°, "
+      f"mid(10mm) {np.degrees(np.arctan(PITCH_MM/(2*np.pi*10))):.0f}°, "
+      f"tip(15.6mm) {np.degrees(np.arctan(PITCH_MM/(2*np.pi*15.6))):.0f}°")
+
 # ---------- 5. diagnostics / 診断画像 ----------
 ov = a.copy().astype(np.uint8)
 ov[blade] = [0, 160, 255]
