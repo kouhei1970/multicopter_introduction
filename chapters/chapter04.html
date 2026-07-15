@@ -79,11 +79,15 @@
           <td>LCR メータで巻線インピーダンスを計測（周波数依存損失は Foster 型回路で表現）</td></tr>
         <tr><td>\(K_e\ (=K_t)\)</td><td>\(5.35\times10^{-4}\) V·s/rad</td>
           <td>無負荷で電圧と回転数を実測し、線形回帰</td></tr>
-        <tr><td>\(C_T,\ C_Q\)</td><td>\(1.0\times10^{-8}\) / \(9.72\times10^{-11}\)</td>
-          <td>推力・トルクの直接計測</td></tr>
-        <tr><td>回転子の慣性 \(J_{rotor}\)</td><td>検証中*</td>
-          <td><strong>モータを分解</strong>し、コイルかごの形状と質量を実測。鉄の軸と銅のコイルの
-          体積・密度から推算（旧値 \(3.30\times10^{-8}\) は物理上限との矛盾が見つかり再確認中）</td></tr>
+        <tr><td>\(C_T\)</td><td>\(6.7\times10^{-9}\ \mathrm{N/(rad/s)^2}\)</td>
+          <td>ベンチの推力実測（Duty0.1 → 1.00 gf）×フォトインタラプタの回転数実測
+          （同 Duty で 1209 rad/s）のペアから \(C_T = T/\omega^2\)</td></tr>
+        <tr><td>\(C_Q\)</td><td>\(4.10\times10^{-11}\ \mathrm{N\,m\,s^2/rad^2}\)</td>
+          <td><strong>コーストダウン試験</strong>（電源カット後の惰性減速、\(1/\omega\) の傾き）で
+          \(J/C_Q = 335\) を直接測定し、下の \(J\) と合成</td></tr>
+        <tr><td>回転子の慣性 \(J_{rotor}\)</td><td>\(3.45\times10^{-9}\ \mathrm{kg\,m^2}\)</td>
+          <td><strong>モータを分解</strong>し、コイルかご（外径6mm・肉厚0.65mm・高さ12.4mm の
+          コップ形状）と鉄軸の実測寸法・質量0.58gから計算</td></tr>
         <tr><td>プロペラの慣性 \(J_{prop}\)</td><td>\(1.03\times10^{-8}\ \mathrm{kg\,m^2}\)</td>
           <td>上面写真から外形を<strong>デジタイズし画素直接積分</strong>（\(I=M\langle r^2\rangle\)）、
           刻印 1209（ピッチ0.9インチ）による取付角の投影補正込み。
@@ -138,16 +142,18 @@
     </figure>
 
     <div class="note-box">
-      <strong>コラム — 数字を疑う:</strong>
-      実は、回転部の合計慣性 \(J_{mp} = J_{rotor} + J_{prop} = 5.31\times10^{-8}\ \mathrm{kg\,m^2}\)
-      には再測定の可能性があります。StampFly の前身機 <strong>AtomFly</strong> のモータの値と
-      混同している可能性が浮上したためです。また、この値と独立に、飛行制御ソフトが使う
-      時定数（約 20 ms）と物理モデルから出る時定数（後述、約 50 ms）にも食い違いが残っています。
-      決着をつけるのは新しい測定——ブレードの通過を反射式フォトインタラプタで非接触検出し、
-      ストレージオシロで<strong>回転数の過渡応答を直接記録する</strong>計画が進んでいます。
-      同定とは一度やって終わりではなく、矛盾が見つかるたびに測り直す営みです。
-      本章では \(J_{mp}\) 依存の数値を<strong>暫定値</strong>と明示し、
-      \(J_{mp}\) に依存しない頑健な結論を区別して示します。
+      <strong>コラム — 数字を疑う（そして測り直す）:</strong>
+      実はこの表の値は、一度大きく訂正されています。以前の推定は
+      \(J_{prop}=2.01\times10^{-8}\)・\(J_{rotor}=3.30\times10^{-8}\) で、前身機 AtomFly の
+      モータ値との混同や桁の取り違えが疑われました。決着をつけたのは3つの独立な再測定です:
+      ①ブレードの通過を反射式フォトインタラプタで非接触検出し、<strong>電源カット後の
+      惰性減速（コーストダウン）</strong>から \(J/C_Q\) を電気モデルなしで直接測定、
+      ②プロペラの<strong>上面写真をデジタイズして画素直接積分</strong>（質量は秤量）、
+      ③分解した回転子の<strong>実測寸法から計算</strong>。3つの結果は互いに整合し、
+      旧値は「プロペラ2倍・回転子10倍」の過大だったと確定しました。
+      興味深いことに、飛行制御ソフトが昔から使っていた時定数 20 ms は、この確定値から
+      出る約 18 ms とほぼ一致——<strong>正しかったのは古いドキュメントではなく古いコード</strong>
+      だったわけです。同定とは一度やって終わりではなく、矛盾が見つかるたびに測り直す営みです。
     </div>
 
     <h2>4.3 二つの時定数 — なぜ「一次遅れ」で済むのか</h2>
@@ -158,10 +164,10 @@
     <div class="math-scroll">
     $$\tau_e = \frac{L}{R} = 1.33\ \mathrm{\mu s}
       \qquad\ll\qquad
-      \tau_m = \frac{J\,R}{K_t K_e} \approx 110\ \mathrm{ms}$$
+      \tau_m = \frac{J\,R}{K_t K_e} \approx 28\ \mathrm{ms}$$
     </div>
     <p>
-      <strong>約 8 万倍</strong>の開きがあります。電流は回転数から見れば「一瞬で」定常に達するので、
+      <strong>約 2 万倍</strong>の開きがあります。電流は回転数から見れば「一瞬で」定常に達するので、
       電気系の式を \(i \approx (V\cdot\mathrm{Duty} - K_e\omega)/R\) と代数式に潰してよく、
       残る機械系だけの一次系になります。運動制御で注目すべきは機械的時定数——
       第2章から使ってきた「モータの一次遅れ」の正体です。
@@ -170,13 +176,16 @@
       ホバリング点まわりで線形化すると、実効時定数と減衰の内訳が見えます:
     </p>
     <div class="math-scroll">
-    $$\tau_{eff} = \frac{J}{\underbrace{K_t K_e / R}_{\text{逆起電力ブレーキ 45\%}}
-      + \underbrace{2 C_Q \omega_0}_{\text{プロペラ空力 55\%}}} \approx 50\ \mathrm{ms}\quad(\text{暫定値})$$
+    $$\tau_{eff} = \frac{J}{\underbrace{K_t K_e / R}_{\text{逆起電力ブレーキ 62\%}}
+      + \underbrace{2 C_Q \omega_0}_{\text{プロペラ空力 38\%}}} \approx 18\ \mathrm{ms}$$
     </div>
     <p>
       面白いのは減衰の内訳です。回転数の変化を押しとどめているのは、プロペラの空気抵抗
-      だけではなく、<strong>逆起電力による電気ブレーキがほぼ半分</strong>を占めています。
+      だけではなく、<strong>逆起電力による電気ブレーキが6割</strong>を占めています。
       モータは加速器であると同時に、自前のダンパでもあるのです。
+      なおこの実効時定数は動作点に依存します——低回転・低Duty（電流が流れる時間が短く
+      電気ブレーキが効かない）では 100 ms 超まで伸びることが、コーストダウン試験と
+      同時に行ったステップ応答の実測（Duty 10% で 63% 立ち上がり 0.20 s）で確認されています。
     </p>
 
     <h2>4.4 ヨー軸の伝達関数 — 積分器＋零点＋一次遅れ</h2>
@@ -195,23 +204,23 @@
     </p>
     <div class="math-scroll">
     $$\frac{r(s)}{\Delta\omega_{cmd}(s)} = K\cdot\frac{\tau_z\,s + 1}{s\,(\tau_{eff}\,s + 1)},
-      \qquad \tau_z = \frac{J_{mp}}{2 C_Q \omega_0} \approx 91\ \mathrm{ms}\quad(\text{暫定値})$$
+      \qquad \tau_z = \frac{J_{mp}}{2 C_Q \omega_0} \approx 46\ \mathrm{ms}$$
     </div>
     <p>
       <strong>積分器＋零点＋一次遅れ</strong>。分子の零点 \(\tau_z s + 1\) の正体が
       「加速の反トルク」です。空気の反作用だけなら積分器＋一次遅れで終わるところに、
       \(J_{mp}\Delta\dot\omega\) の項が分子に \(s\) を持ち込んで零点を作ります。
       \(\tau_z > \tau_{eff}\) なので位相進み特性となり、ステップ指令の瞬間には
-      定常の約 1.8 倍のトルクが立ち上がって、モータの回転数が落ち着くにつれて
+      定常の約 2.6 倍のトルクが立ち上がって、モータの回転数が落ち着くにつれて
       空気のトルクに引き継がれます。
     </p>
     <div class="note-box">
-      <strong>頑健な結論と暫定の数値:</strong> 倍率
-      \(\tau_z/\tau_{eff} = 1 + K_tK_e/(R\cdot 2C_Q\omega_0) \approx 1.83\) は
+      <strong>頑健な構造:</strong> 倍率
+      \(\tau_z/\tau_{eff} = 1 + K_tK_e/(R\cdot 2C_Q\omega_0) \approx 2.6\) は
       \(J_{mp}\) に<strong>依存しません</strong>（分子と分母の \(J\) が約分されるため）。
-      つまり \(J_{mp}\) が再測定でいくつになっても、「加速の反トルクが立ち上がりを担い、
-      その初期の大きさは定常の約 1.8 倍」という構造は変わりません。
-      変わるのは \(\tau_z\)・\(\tau_{eff}\) の絶対値（応答の速さ）だけです。
+      「加速の反トルクが立ち上がりを担い、初期に定常の数倍のトルクが出る」という構造は、
+      慣性の測定誤差の影響を受けない結論です。\(J_{mp}\) が変わると
+      \(\tau_z\)・\(\tau_{eff}\) の絶対値（応答の速さ）だけが伸び縮みします。
       下の教材の \(J_{mp}\) スライダーで、これを確かめてみてください。
     </div>
 
@@ -220,7 +229,7 @@
       ヨー指令（CW/CCW の回転数割り）をステップで入れたときの反トルクの内訳と
       ヨー角速度の応答です。「加速の反トルク（零点）」のチェックを外すと、
       立ち上がりの鋭さがどう失われるかを見てください。
-      \(J_{mp}\) スライダーは再測定で動きうる範囲を動かせます——
+      \(J_{mp}\) スライダーは測定誤差の範囲（±15%程度）で動かせます——
       <strong>波形は伸び縮みしても、形（比率）は変わりません</strong>。
     </p>
 
@@ -229,16 +238,16 @@
       <div class="sim-opts">
         <label><input type="checkbox" id="optZero" checked> 加速の反トルク（零点）を含める</label>
         <label>\(J_{mp}\):
-          <input type="range" id="optJ" min="20" max="55" value="53">
-          <span id="jVal">5.3e-8</span> kg·m²
+          <input type="range" id="optJ" min="10" max="18" value="14">
+          <span id="jVal">1.4e-8</span> kg·m²
         </label>
       </div>
       <div class="sim-readout" id="yawReadout"></div>
     </div>
 
     <p class="src">
-      条件: ヨー割り \(\Delta\omega_{cmd} = 150\ \mathrm{rad/s}\)（ホバ回転数の5%）のステップ。
-      モデルと数値は本文と同一（\(C_Q = 9.72\times10^{-11}\), \(K_e = K_t = 5.35\times10^{-4}\),
+      条件: ヨー割り \(\Delta\omega_{cmd} = 180\ \mathrm{rad/s}\)（ホバ回転数の約5%）のステップ。
+      モデルと数値は本文と同一（\(C_Q = 4.10\times10^{-11}\), \(K_e = K_t = 5.35\times10^{-4}\),
       \(R = 0.593\ \Omega\), \(I_{zz} = 2.04\times10^{-5}\ \mathrm{kg\,m^2}\)）。
       機体側のヨー空力減衰は無視（純粋な積分器）。
     </p>
@@ -246,14 +255,14 @@
     <h2>まとめ</h2>
     <ul>
       <li>モータ+プロペラは電気系と機械系の2本の微分方程式。ただし
-        \(\tau_e = 1.33\ \mathrm{\mu s} \ll \tau_m \approx 110\ \mathrm{ms}\)（約8万倍）なので、
-        運動制御では機械系だけの<strong>一次遅れ</strong>に潰せる。</li>
-      <li>回転数変化への減衰は、プロペラ空力 55% + <strong>逆起電力ブレーキ 45%</strong>。</li>
-      <li>パラメータは全部誰かが測った数字: LCRメータ、無負荷V–ω回帰、推力・トルク計測、
-        モータ分解、ブレード切り分け、2点吊り法。</li>
+        \(\tau_e = 1.33\ \mathrm{\mu s} \ll \tau_m \approx 28\ \mathrm{ms}\)（約2万倍）なので、
+        運動制御では機械系だけの<strong>一次遅れ</strong>に潰せる（ホバ点の実効時定数 約18ms）。</li>
+      <li>回転数変化への減衰は、<strong>逆起電力ブレーキ 62%</strong> + プロペラ空力 38%。</li>
+      <li>パラメータは全部誰かが測った数字: LCRメータ、無負荷V–ω回帰、推力計測、
+        モータ分解、写真デジタイズ、コーストダウン試験、2点吊り法。</li>
       <li>ヨー軸は<strong>積分器＋零点＋一次遅れ</strong>。零点の正体は加速の反トルクで、
-        立ち上がりに定常の約1.8倍のトルクを供給する（この倍率は \(J_{mp}\) に依存せず頑健）。</li>
-      <li>\(J_{mp}\) と時定数には未解決の食い違いがあり再測定を計画中。
+        立ち上がりに定常の約2.6倍のトルクを供給する（この倍率は \(J_{mp}\) に依存せず頑健）。</li>
+      <li>旧推定の \(J\) には「プロペラ2倍・回転子10倍」の誤りがあり、3つの独立測定で訂正された。
         同定は「矛盾が見つかったら測り直す」の繰り返し。</li>
     </ul>
     <p>
@@ -262,8 +271,11 @@
     </p>
 
     <p class="src">
-      データの出所: モータドライバ論文（sf_motordriver、R/L/Ke/C_Q/J の同定値）、
-      機体慣性は2点吊り法による実測。計算の再現は notes/calc/motor_time_constants.py。
+      データの出所: 電気系（R/L/Ke）はモータドライバ論文の同定値。
+      \(C_T\)・\(C_Q\)・\(J\) は2026年7月の再測定
+      （ベンチ推力×フォトインタラプタ回転実測、コーストダウン試験、写真デジタイズ、
+      回転子実測諸元）。機体慣性は2点吊り法による実測。
+      計算の再現は notes/calc/ の coastdown_id.py, prop_inertia_photo.py, rotor_inertia_specs.py。
     </p>
 
     <nav class="chapter-nav">
@@ -284,10 +296,10 @@
   (function () {
     'use strict';
 
-    const CQ = 9.72e-11, KE = 5.35e-4, KT = 5.35e-4, R = 0.593;
-    const CT = 1.0e-8, M = 0.0368, G = 9.81, IZZ = 20.4e-6;
+    const CQ = 4.10e-11, KE = 5.35e-4, KT = 5.35e-4, R = 0.593;
+    const CT = 6.7e-9, M = 0.0368, G = 9.81, IZZ = 20.4e-6;
     const OMEGA0 = Math.sqrt(M * G / 4 / CT);
-    const DW_CMD = 150;            // yaw split step [rad/s]
+    const DW_CMD = 180;            // yaw split step [rad/s] (~5% of hover speed)
     const D_EMF = KT * KE / R;     // back-EMF damping
     const D_AERO = 2 * CQ * OMEGA0;
     const T_END = 0.4, DT = 1e-4;

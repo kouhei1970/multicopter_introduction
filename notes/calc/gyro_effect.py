@@ -27,9 +27,8 @@ identical in both runs -> cancels in the comparison), aero damping,
 translation coupling, thrust change from the roll pulse (superimposed torque).
 
 Parameters: same provenance as roll_divergence.py, plus
-  J_mp = 5.31e-8 kg·m² (rotor+prop TOTAL inertia; authoritative value from
-         sf_sandbox/paper/sf_motordriver.tex Table. 旧版はfirmwareの2.01e-8を
-         使用していたが、論文により 2.01e-8 はプロペラ単体と判明し修正)
+  J_mp = 1.375e-8 kg·m² (2026-07-15確定値: プロペラ1.030e-8[写真+画素積分+ピッチ補正]
+         + 回転子3.45e-9[実測諸元コップモデル]。旧5.31e-8は旧プロペラ+桁違いの過大)
   I = diag(9.16e-6, 13.3e-6, 20.4e-6) kg·m² (kSpecInertia)
 """
 
@@ -37,9 +36,9 @@ import math
 
 # --- parameters ---
 IXX, IYY, IZZ = 9.16e-6, 13.3e-6, 20.4e-6   # body inertia [kg m^2]
-JMP = 5.31e-8        # rotor+prop total inertia [kg m^2] (paper value)
-CT = 1.0e-8          # thrust coefficient [N/(rad/s)^2]
-KAPPA = 9.71e-3      # torque/thrust ratio [m]
+JMP = 1.375e-8       # rotor+prop total inertia [kg m^2] (2026-07-15確定: 写真法プロペラ1.030e-8+諸元法回転子3.45e-9)
+CT = 6.7e-9          # thrust coefficient [N/(rad/s)^2] (現行プロペラ: ベンチ推力×実測ω)
+KAPPA = 6.12e-3      # torque/thrust ratio [m] (現行プロペラ: C_Q/C_T = 4.10e-11/6.7e-9)
 M, G, D = 0.0368, 9.81, 0.023
 T0 = M * G / 4.0
 OMEGA0 = math.sqrt(T0 / CT)          # hover prop speed [rad/s]

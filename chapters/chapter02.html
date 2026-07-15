@@ -71,7 +71,7 @@
       押されるのです。モータとプロペラは機体フレームに固定されていますから、
       <strong>プロペラを CW に回すと、空気は機体を CCW に回そうとします</strong>。
       この定常的なトルクは推力に比例し、\(\tau_{air} = \kappa\,T\)
-      （StampFly では \(\kappa = C_Q/C_T = 9.71\times10^{-3}\ \mathrm{m}\)）と書けます。
+      （StampFly では \(\kappa = C_Q/C_T = 6.12\times10^{-3}\ \mathrm{m}\)、現行プロペラの実測）と書けます。
     </p>
     <p>
       もし同じ回転方向のプロペラだけで機体を作ると、機体は常にプロペラと反対方向に
@@ -92,12 +92,12 @@
       <thead><tr><th></th><th>空気の反作用 \(\kappa\,\Delta T\)</th><th>加速の反トルク \(J_{mp}\dot{\omega}\)</th></tr></thead>
       <tbody>
         <tr><td>性質</td><td>定常（回転数に追随）</td><td>過渡（回転数変化中のみ）</td></tr>
-        <tr><td>4発合計の目安*</td><td>約 0.35 mN·m</td><td>初期 約 0.6 mN·m</td></tr>
+        <tr><td>4発合計の目安*</td><td>約 0.22 mN·m</td><td>初期 約 0.6 mN·m</td></tr>
       </tbody>
       <caption>* 各モータ推力を ±10% ステップさせた場合の概算
-      （回転部合計の慣性 \(J_{mp}=5.31\times10^{-8}\ \mathrm{kg\,m^2}\)・実効時定数 約 50 ms、
-      いずれもモータドライバ論文の同定値。\(J_{mp}\) は再測定の可能性がある暫定値）。
-      回転数を変えている最中は、加速の反トルクが空気の反作用と同等以上になる。</caption>
+      （回転部合計の慣性 \(J_{mp}=1.375\times10^{-8}\ \mathrm{kg\,m^2}\)・ホバ点の実効時定数 約 18 ms。
+      いずれも2026年7月の再測定で確定した値——写真デジタイズ・実測諸元・コーストダウン試験の合成）。
+      回転数を変えている最中は、加速の反トルクが空気の反作用を大きく上回る。</caption>
     </table>
     <p>
       ヨーの制御は、この<strong>空気と加速、二つの反トルクを上手に使うことがポイント</strong>になります。
@@ -190,7 +190,7 @@
     <div class="note-box">
       <strong>ヨーの効きはなぜ弱いか:</strong> ロール・ピッチの項は \(1/(4d)\)、
       ヨーの項は \(1/(4\kappa)\) で割られています。StampFly では
-      \(d = 23\ \mathrm{mm}\) に対して \(\kappa = 9.7\ \mathrm{mm}\)。
+      \(d = 23\ \mathrm{mm}\) に対して \(\kappa = 6.1\ \mathrm{mm}\)。
       ロールとピッチは推力を腕の長さ \(d\) で効かせられるのに対し、ヨーは反トルク経由の
       短い「実効腕」\(\kappa\) しか使えないため、<strong>同じ推力変化から得られるトルクが
       はるかに小さい</strong>のです。実機の同定でも実効プラントゲインは
@@ -249,7 +249,7 @@
 
     <p class="src">
       操作盤の計算はこの章のミキシング式そのままです（\(d=0.023\ \mathrm{m}\)、
-      \(\kappa=9.71\times10^{-3}\ \mathrm{m}\)、ホバリング推力 \(T_0=90.3\ \mathrm{mN}\)/発）。
+      \(\kappa=6.12\times10^{-3}\ \mathrm{m}\)、ホバリング推力 \(T_0=90.3\ \mathrm{mN}\)/発）。
       隣接配置モードでも「対角配置用のミキシング」を使い続けることで、
       配置と計算が食い違うと何が起きるかを見せています。トルクは機体に生じる正味値です。
     </p>
@@ -324,7 +324,7 @@
     'use strict';
 
     const D = 0.023;             // moment arm [m]
-    const KAPPA = 9.71e-3;       // torque/thrust ratio κ [m]
+    const KAPPA = 6.12e-3;       // torque/thrust ratio κ [m] (current prop, 2026-07)
     const T0 = 0.0368 * 9.81 / 4; // hover thrust per motor [N]
 
     // Motor geometry: M1:FR, M2:RR, M3:RL, M4:FL / モータ配置（上面図）

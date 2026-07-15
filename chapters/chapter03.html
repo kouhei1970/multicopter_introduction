@@ -164,17 +164,17 @@
     <table class="data-table">
       <thead><tr><th>シナリオ</th><th>ジャイロトルク</th><th>制御トルク上限比</th></tr></thead>
       <tbody>
-        <tr><td>穏やか（ヨー割り 2.5%・レート 1 rad/s）</td><td>16 µN·m</td><td>0.8%</td></tr>
-        <tr><td>中間（ヨー割り 12.5%・レート 5 rad/s）</td><td>399 µN·m</td><td>19.2%</td></tr>
-        <tr><td>激しい（ヨー割り 12.5%・レート 10 rad/s）</td><td>798 µN·m</td><td>38.4%</td></tr>
+        <tr><td>穏やか（ヨー割り 2.5%・レート 1 rad/s）</td><td>5 µN·m</td><td>0.2%</td></tr>
+        <tr><td>中間（ヨー割り 12.5%・レート 5 rad/s）</td><td>126 µN·m</td><td>6.1%</td></tr>
+        <tr><td>激しい（ヨー割り 12.5%・レート 10 rad/s）</td><td>252 µN·m</td><td>12.2%</td></tr>
       </tbody>
       <caption>ロータジャイロトルクの大きさ（StampFly、制御トルク上限 2.08 mN·m に対する比率）。
-      ロータ慣性 \(J_{mp}=5.31\times10^{-8}\ \mathrm{kg\,m^2}\) は再測定の可能性がある暫定値だが、
-      候補範囲のどの値でも「ホバでは無視可・機動では無視不可」の結論は変わらない。</caption>
+      ロータ慣性 \(J_{mp}=1.375\times10^{-8}\ \mathrm{kg\,m^2}\) は写真デジタイズ・実測諸元・
+      コーストダウン試験による2026年7月の確定値。</caption>
     </table>
     <p>
       さらに、強いヨーとロールを同時にかける機動（0.2 秒）をフルモデルで積分して比べると、
-      ジャイロ項の有無で <strong>0.4 秒後に姿勢が 13〜18° 違う軌道</strong>になります。
+      ジャイロ項の有無で <strong>0.4 秒後にピッチが約 10° 違う軌道</strong>になります。
       ホバリング付近の解析では無視してよいが、機動飛行やシミュレータでは入れるべき項——
       それが数値からの答えです。下の教材で、項を ON/OFF して確かめられます。
     </p>
@@ -245,7 +245,7 @@
         釣り合い速度 \(v_{eq}=\sqrt{mg\tan\theta/c}\)）。</li>
       <li>回転はオイラー: \(I\dot{\boldsymbol\omega} + \boldsymbol\omega\times(I\boldsymbol\omega)
         + \boldsymbol\omega\times\boldsymbol h = \boldsymbol\tau\)。
-        ロータジャイロ項はホバでは消えるが、機動では 0.4 秒で姿勢 13〜18° 分の差になる。</li>
+        ロータジャイロ項はホバでは消えるが、機動では 0.4 秒でピッチ約 10° 分の差になる。</li>
       <li>角速度と姿勢角の間には変換行列が挟まり、ピッチ ±90° で特異（ジンバルロック）。
         実装はクォータニオンで逃げる。</li>
       <li>モデルは常に近似。「制御の目的に足りる精度で、できるだけ簡単に」が指針。</li>
@@ -282,9 +282,9 @@
 
     // --- StampFly parameters (provenance: chapter text) ---
     const IXX = 9.16e-6, IYY = 13.3e-6, IZZ = 20.4e-6; // inertia [kg m^2]
-    const JMP = 5.31e-8;      // rotor+prop TOTAL inertia [kg m^2] (paper-identified)
-    const CT = 1.0e-8;        // thrust coefficient
-    const KAPPA = 9.71e-3;    // torque/thrust ratio [m]
+    const JMP = 1.375e-8;     // rotor+prop TOTAL inertia [kg m^2] (2026-07 measured)
+    const CT = 6.7e-9;        // thrust coefficient (current prop)
+    const KAPPA = 6.12e-3;    // torque/thrust ratio [m] (current prop)
     const M = 0.0368, G = 9.81;
     const CDRAG = 1.5e-3;     // quadratic drag coeff (rough estimate) [N/(m/s)^2]
     const T0 = M * G / 4;
