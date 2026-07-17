@@ -1,0 +1,549 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第6章 PID制御の道具箱 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    pre.codebox {
+      background: var(--card-bg); border: 1px solid var(--border); border-radius: 8px;
+      padding: 0.8rem 1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.5;
+    }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 9rem; }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第6章</p>
+    <h1>PID制御の道具箱</h1>
+    <p class="subtitle">教科書の式から、実機で動く実装まで</p>
+  </header>
+
+  <main>
+    <p>
+      前章では PID を「使い」ました。この章では PID を<strong>分解</strong>します。
+      教科書に最初に出てくる式は3行で書けますが、そのまま実機に載せると
+      たいてい痛い目に遭います——微分はノイズで暴れ、指令を変えるたびに出力が跳ね、
+      積分はいつの間にか育ちすぎて機体が言うことを聞かなくなる。
+      教科書の式と実機のコードの間にある「工夫の階段」を、
+      第4章で同定したモータを実験台にひとつずつ登っていきます。
+    </p>
+
+    <h2>6.1 教科書のPID — 3つの項、3つの時間</h2>
+    <p>
+      最もよく使われるのは<strong>並列形</strong>です。誤差 \(e = r - y\)
+      （目標値 − 測定値）に対して:
+    </p>
+    <div class="math-scroll">
+    $$u(t) = K_p\,e(t) + K_i \int_0^t e(\tau)\,d\tau + K_d\,\frac{de}{dt}$$
+    </div>
+    <p>
+      3つの項は、見ている「時間」が違います。
+      <strong>P は現在</strong>——いまの誤差に比例して押す。
+      <strong>I は過去</strong>——これまでの誤差の蓄積を返済するまで押し続ける。
+      <strong>D は未来</strong>——誤差の増える速さから先回りしてブレーキを掛ける。
+      ゲインを時間の単位でくくり直した<strong>時定数形</strong>もよく使われます:
+    </p>
+    <div class="math-scroll">
+    $$u(t) = K_p\left(e + \frac{1}{T_i}\int e\,d\tau + T_d\,\dot{e}\right),
+      \qquad T_i = \frac{K_p}{K_i},\quad T_d = \frac{K_d}{K_p}$$
+    </div>
+    <p>
+      \(T_i\)（積分時間）は「I が P に追いつくまでの時間」、\(T_d\)（微分時間）は
+      「D が何秒先を予測するか」と読めます。実機 StampFly のファームウェアは
+      時定数形で、前章のゲイン表の \(T_i\)・\(T_d\) がまさにこれです。
+      本章では式の見通しがよい並列形で進め、必要なときに換算します。
+    </p>
+
+    <h2>6.2 モータで体感する — P の限界、I の御利益、I の欲張りすぎ</h2>
+    <p>
+      実験台は第4章で同定したモータです。ホバリング点まわりで線形化すると、
+      Duty からプロペラ回転数への伝達はほぼ一次遅れになります:
+    </p>
+    <div class="math-scroll">
+    $$G(s) = \frac{\Delta\omega}{\Delta u} \approx \frac{K_m}{\tau s + 1},
+      \qquad K_m \approx 4500\ \mathrm{rad/s\ (Duty1あたり)},\quad \tau \approx 16\ \mathrm{ms}$$
+    </div>
+    <p>
+      「回転数を 300 rad/s 上げろ」というステップ指令と、途中で入る負荷外乱
+      （プロペラが傷ついて負荷が増えた想定）に対して、P・I・D を効かせてみてください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="rolesCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label>\(K_p\):
+          <input type="range" id="rKp" min="2" max="30" value="10">
+          <span id="rKpVal"></span>
+        </label>
+        <label>\(K_i\):
+          <input type="range" id="rKi" min="0" max="60" value="0">
+          <span id="rKiVal"></span>
+        </label>
+        <label>\(K_d\):
+          <input type="range" id="rKd" min="0" max="20" value="0">
+          <span id="rKdVal"></span>
+        </label>
+      </div>
+      <div class="sim-readout" id="rolesReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 目標 +300 rad/s のステップ（t=0.2s）、負荷外乱（t=1.5s、Duty −0.05 相当）。
+      D は測定値側・フィルタ付き（τf=4ms。理由は6.3〜6.4節）。飽和なし・ノイズなし。
+    </p>
+
+    <p>やってみると、教科書の1行ずつが体感になります:</p>
+    <ul>
+      <li><strong>P だけ</strong> → 必ず誤差が残ります。一次遅れの DC ゲインは有限なので、
+        定常誤差は \(e_{ss} = r/(1 + K_p K_m)\)。\(K_p\) を上げれば減りますが、
+        ゼロにはなりません。外乱が入ると誤差はさらに増えます。</li>
+      <li><strong>I を足す</strong> → 定常誤差が消えます。I は「誤差が残っている限り
+        押し続ける」ので、DC では無限大のゲイン——ステップ目標にもステップ外乱にも
+        最終的に勝ちます。</li>
+      <li><strong>I を欲張る</strong> → 振動が始まります。過去の蓄積は急には
+        止まれないからです（\(K_i\) を上げて確かめてください）。</li>
+      <li><strong>D を足す</strong> → 教科書どおりなら「振動が収まる」はず——ところが
+        <strong>悪化します</strong>（ぜひ確かめてください）。一次遅れのプラントでは、
+        測定値微分の D は回転数の変化そのものに逆らう「重り」として働き、
+        プラントを見かけ上遅くします。遅くなったプラントを I が急かすので、
+        振動はむしろ育つのです。</li>
+    </ul>
+
+    <div class="note-box">
+      <strong>では D はいつ効くのか — カスケードとの再会:</strong>
+      「速度に逆らう力」が減衰として本領を発揮するのは、
+      トルク→角速度→角度のように<strong>積分が重なった系</strong>です。
+      前章の姿勢制御がまさにそれ——そして思い出してください、
+      あの<strong>内側レートループ</strong>こそ「測定した角速度に逆らう」構造でした。
+      外側 P ＋内側 P のカスケードは、展開すると角度誤差への P ＋角速度への
+      フィードバック、つまり <strong>PD 制御と等価</strong>です。カスケードとは
+      D 項の仕事を<strong>構造</strong>でやる方法であり、しかもジャイロが角速度を
+      直接くれるので、角度を微分してノイズと格闘する必要すらありません。
+      一方、一次遅れのモータには PI で十分——これも教科書の定番です。</div>
+
+    <h2>6.3 理想微分は使えない — 不完全微分と η の意味</h2>
+    <p>
+      ここからが「実機の階段」です。まず微分。理想微分 \(D(s) = K_d\,s\) のゲインは
+      周波数に比例して<strong>無限に増えます</strong>。センサの測定値には必ず高周波ノイズが
+      乗っているので、理想微分は「ノイズ専用の増幅器」になってしまいます。
+      そこで一次遅れフィルタを抱き合わせた<strong>不完全微分</strong>を使います:
+    </p>
+    <div class="math-scroll">
+    $$D(s) = \frac{K_d\,s}{\tau_f s + 1}, \qquad \tau_f = \eta\,T_d$$
+    </div>
+    <p>
+      低い周波数（\(\omega \ll 1/\tau_f\)）ではほぼ理想微分 \(K_d s\) として働き、
+      高い周波数ではゲインが頭打ちになります。その上限は
+    </p>
+    <div class="math-scroll">
+    $$|D(j\omega)| \xrightarrow{\ \omega\to\infty\ } \frac{K_d}{\tau_f}
+      = \frac{K_d}{\eta\,T_d} = \frac{K_p}{\eta}$$
+    </div>
+    <p>
+      つまり <strong>\(\eta\) は「微分項のゲインを \(K_p\) の何倍で打ち止めにするか」を
+      決める係数</strong>です。\(\eta = 0.125\)（実機の値）なら上限は \(K_p\) の 8 倍。
+      \(\eta\) を小さくするほど微分は理想に近づき鋭くなりますが、ノイズの増幅上限も
+      \(1/\eta\) 倍に上がります。微分が「微分として」働く帯域は
+      \(1/T_d\) から \(1/(\eta T_d)\) まで——幅にして \(1/\eta\) 倍。
+      \(\eta\) は 0.1〜0.2 が相場です。下の 6.5 節の教材でノイズを入れて、
+      \(\eta\) を動かすと制御入力の「毛羽立ち」がどう変わるか見てください。
+    </p>
+
+    <h2>6.4 微分キックと微分先行 — D は測定値に掛ける</h2>
+    <p>
+      もうひとつ、微分には問題があります。誤差は \(e = r - y\) なので
+      \(\dot{e} = \dot{r} - \dot{y}\)。目標値 \(r\) がステップで変わると、
+      \(\dot{r}\) は撃力（一瞬だけ無限大）——微分項が出力を思い切り蹴飛ばします。
+      これが<strong>微分キック</strong>です。マルチコプタでは目標値はスティックから来ます。
+      12bit の AD 変換値は常に階段状に変わるので、キックは「たまに」ではなく
+      <strong>常時</strong>発生します。
+    </p>
+    <p>
+      対策は簡単で、<strong>D を誤差ではなく測定値 \(y\) だけに掛ける</strong>
+      （\(\dot e\) の代わりに \(-\dot y\) を使う）。これを<strong>微分先行（PI-D）</strong>
+      と呼びます。閉ループの分母（極）は変わらないので安定性・外乱応答はそのまま、
+      目標値の微分だけが式から消えます。
+      さらに P も測定値側に移した<strong>比例微分先行（I-PD）</strong>という形もあります
+      ——目標値応答をいっそう滑らかにしたいプロセス制御などで使われる、
+      「そういうものもある」と知っておけば十分です。
+      StampFly は <strong>P は偏差・D は測定値</strong>の PI-D 構成です
+      （ソースコード pid.hpp で確認済み）。
+    </p>
+
+    <h2>6.5 積分の実装 — 地味だが、いちばん事故る場所</h2>
+    <p>
+      積分のコードは1行です。前進オイラー（毎周期、誤差×周期を足し込む）なら:
+    </p>
+    <pre class="codebox">// Forward Euler / 前進オイラー
+integral += e * dt;
+
+// Trapezoidal (Tustin) — the real firmware uses this for all terms
+// 台形則（Tustin）— 実機は全項この形
+integral += 0.5f * (e + e_prev) * dt;</pre>
+    <p>
+      400 Hz もあれば両者の差はわずかです。恐いのは離散化ではなく、
+      <strong>ワインドアップ（巻き上がり）</strong>のほうです。
+      モータの Duty は 0〜1 までしか出せません。出力が飽和している間も
+      積分器は「まだ誤差がある」と足し込み続け、際限なく育ちます。
+      誤差が反転しても、育った積分が吐き出されるまで出力は戻らない——
+      大オーバーシュートや、最悪「しばらく言うことを聞かない」機体になります。
+    </p>
+    <p>対策には段階があります:</p>
+    <ul>
+      <li><strong>クランプ（積分値の上下限）</strong> — 最低限の保険。ただし
+        <strong>これだけでは不十分</strong>です。上限を出力幅いっぱいに取ると、
+        積分は依然として出力幅いっぱいまで巻き上がれます。</li>
+      <li><strong>条件付き積分</strong> — 「出力がすでに飽和していて、いま足そうとしている
+        誤差が飽和をさらに深くする向きなら、積分を止める」。実機 StampFly の方式です。</li>
+      <li><strong>逆算法（back-calculation）</strong> — 飽和ではみ出した量を時定数 \(T_t\) で
+        積分器に戻す。旧ファームの方式（\(T_t = \sqrt{T_i T_d}\)）。
+        どちらも飽和中しか働かないので、線形領域の挙動は同一です。</li>
+    </ul>
+
+    <div class="note-box">
+      <strong>コラム — やらかし博物館（積分編）:</strong>
+      積分まわりの失敗は制御実装の定番です。<strong>その1:</strong> 積分にリミットを
+      かけ忘れ、値がオーバーフローして<strong>符号が反転</strong>——制御入力が逆向きに
+      振り切れて機体が暴走する。<strong>その2:</strong> 飽和中に積分が巻き上がり、
+      操作しても<strong>全然効かない</strong>機体になる（吐き出しが終わるまで数秒間）。
+      「飽和したら積分をやめる」と言うのは一行ですが、方向の判定・復帰の条件まで含めて
+      正しく動くコードを書くのは、実はそれなりに大変です。
+      ——余談: いまではこうした定型実装は AI がそつなく書いてくれます。それでも、
+      だからこそ、<strong>書かれたコードの正しさを検収できる目</strong>が要ります。
+      この章はその目を作るための章です。
+    </div>
+
+    <p>
+      仕上げの実験です。大きなステップ（飽和が続く）と小さなステップ＋ノイズで、
+      この章で学んだ工夫の効果を確かめてください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="realCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>シナリオ:
+          <select id="wScen">
+            <option value="big" selected>大ステップ 1800（飽和→ワインドアップ）</option>
+            <option value="small">小ステップ 200＋ノイズ（微分の現実）</option>
+          </select>
+        </label>
+        <label>微分:
+          <select id="wDmode">
+            <option value="none" selected>なし</option>
+            <option value="err">偏差に掛ける（キック）</option>
+            <option value="meas">測定値に掛ける（PI-D）</option>
+          </select>
+        </label>
+        <label>η:
+          <input type="range" id="wEta" min="5" max="50" value="13">
+          <span id="wEtaVal"></span>
+        </label>
+        <label><input type="checkbox" id="wAw"> 条件付き積分</label>
+        <label><input type="checkbox" id="wNoise"> 計測ノイズ</label>
+      </div>
+      <div class="sim-readout" id="realReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: PI は固定（\(K_p=0.001,\ K_i=0.05\)、微分オン時 \(K_d=3\times10^{-5}\)）。
+      Duty の飽和 ±0.5（ホバ点まわり）。ノイズは回転数計測に σ=3 rad/s の白色雑音。
+      上段=回転数、下段=制御入力（Duty）。
+    </p>
+
+    <ul>
+      <li><strong>大ステップ・条件付き積分なし</strong> → 出力が張り付いている間に積分が育ち、
+        目標を大きく超えてから戻る（線形設計ではオーバーシュートしないゲインなのに！）。
+        条件付き積分を入れると消えます。</li>
+      <li><strong>小ステップ・微分=偏差</strong> → 指令の瞬間に Duty が跳ねる（微分キック）。
+        測定値側に切り替えると消えます。回転数の応答はほぼ変わらないことにも注目。</li>
+      <li><strong>ノイズ＋微分オン</strong> → Duty が毛羽立ちます。η を上げると
+        毛羽立ちは減り（ゲイン上限 \(K_p/\eta\) が下がる）、微分の切れ味も鈍ります。</li>
+    </ul>
+
+    <h2>6.6 実機の実装を読む</h2>
+    <p>
+      これで実機のコードが全部読めるようになりました。StampFly の PID
+      （firmware/vehicle の pid.hpp、1軸あたり約80行）の設計はこうです:
+    </p>
+    <ul>
+      <li>形は時定数形＋不完全微分:
+        \(C(s) = K_p\left(1 + \dfrac{1}{T_i s} + \dfrac{T_d s}{\eta T_d s + 1}\right)\)、
+        \(\eta = 0.125\)（ゲイン上限 = \(K_p\) の8倍）</li>
+      <li>離散化は<strong>全項 Tustin</strong>（400 Hz）。積分は台形則、微分は双一次変換の漸化式</li>
+      <li><strong>P は偏差、D は測定値</strong>（PI-D）。リセット直後の1周期は微分の
+        前回値を仕込むだけ——いきなり微分すると初期値からのキックが出るため</li>
+      <li>アンチワインドアップは<strong>条件付き積分</strong>＋保険のクランプ。
+        コード中のコメントに「クランプだけではアンチワインドアップにならない」と明記</li>
+      <li>出力制限は段ごとの物理量で: レートループはトルク上限、角度ループは
+        レート指令上限（前章 5.5 節の表の構成）</li>
+    </ul>
+    <p>
+      教科書の3行と実機の80行の差は、この章で登った階段——不完全微分・微分先行・
+      条件付き積分・初回の仕込み——そのものです。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>PID は <strong>P=現在、I=過去、D=未来</strong>。並列形と時定数形は
+        \(T_i = K_p/K_i\)、\(T_d = K_d/K_p\) で行き来できる。</li>
+      <li>P だけでは一次遅れに定常誤差 \(r/(1+K_pK_m)\) が残る。I が消すが、
+        欲張ると振動する。一次遅れには PI で十分——D はむしろ「重り」になる。
+        D の本領は積分の重なる系で、前章のカスケード内側ループは
+        D の仕事を構造で実現したものだった。</li>
+      <li>理想微分はノイズ増幅器。<strong>不完全微分</strong>の \(\eta\) は
+        「微分ゲインを \(K_p\) の \(1/\eta\) 倍で打ち止めにする」係数（実機 0.125 → 8倍）。</li>
+      <li>目標値の微分は<strong>キック</strong>を生む。<strong>D は測定値に掛ける</strong>（PI-D）。
+        閉ループ極は変わらない。I-PD という形もある。</li>
+      <li>積分は<strong>ワインドアップ</strong>する。クランプだけでは不十分で、
+        <strong>条件付き積分</strong>か逆算法を使う。リミットのかけ忘れは暴走のもと。</li>
+      <li>実機の PID は「教科書の式＋この章の工夫」で全行読める。</li>
+    </ul>
+    <p>
+      道具箱は揃いました。次章では視点を時間から周波数へ移します——実機 StampFly の
+      ゲインを実際に決めている<strong>ループ整形</strong>（位相余裕・交差周波数）と、
+      第5章で見た「崖」の種明かしです。
+    </p>
+
+    <p class="src">
+      本章の対話記録: notes/qa_log.md の Q-PID-1〜Q-PID-4。実機実装の出典:
+      stampfly_ecosystem firmware/vehicle/components/sf_controller_pid/include/pid.hpp
+      （P=偏差・D=測定値・η=0.125・全項Tustin・条件付き積分を原文で確認）。
+      プラント数値は第4章の同定値（ホバ点線形化）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter05.html">← 第5章 姿勢のPID制御</a>
+      <span>第7章 ループ整形（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Chapter 6 sims: PID on the identified motor plant
+  // 第6章教材: 同定済みモータプラント G=Km/(τs+1) に PID を掛ける
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const KM = 4500;     // rad/s per unit duty (hover-point linearization) / ホバ点線形化ゲイン
+    const TAU = 0.016;   // motor effective time constant [s]
+    const DT = 1e-4;
+    const $ = id => document.getElementById(id);
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    function drawAxes(ctx, x0, y0, w, h, yMinLabel, yMaxLabel, yLabel) {
+      const c = themeColors();
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(yMaxLabel, x0 - 6, y0 + 10);
+      ctx.fillText(yMinLabel, x0 - 6, y0 + h);
+      ctx.save(); ctx.translate(x0 - 44, y0 + h / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0); ctx.restore();
+    }
+
+    function plotXY(ctx, xs, ys, x0, y0, w, h, xMax, yMin, yMax, color, width) {
+      ctx.strokeStyle = color; ctx.lineWidth = width || 2.2;
+      ctx.beginPath();
+      for (let i = 0; i < xs.length; i++) {
+        const xx = x0 + (xs[i] / xMax) * w;
+        const yy = y0 + h * ((yMax - Math.max(yMin, Math.min(yMax, ys[i]))) / (yMax - yMin));
+        if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+    }
+
+    // PID + first-order plant, all chapter-6 options / 本章の全オプション入りPIDシム
+    function simulate(o) {
+      const opt = Object.assign({
+        kp: 1e-3, ki: 0, kd: 0, dMode: 'meas', tauF: 0.002,
+        ref: 300, tRef: 0.2, dU: 0, tDist: 1e9,
+        sat: 0, aw: false, noise: 0, tEnd: 2.5, sample: 0.002,
+        dt: DT,   // D併用時は細かい刻みが要る（強いレート帰還は速い極を作る）
+      }, o);
+      const dt = opt.dt;
+      const n = Math.round(opt.tEnd / dt);
+      let y = 0, integ = 0, dState = 0, prevIn = 0, first = true;
+      let seed = 123457;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x3fffffff - 1; };
+      const step = Math.round(opt.sample / dt);
+      const ts = [], ysArr = [], usArr = [];
+      let peak = 0, e145 = null, eEnd = 0, satSteps = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i * dt;
+        const r = t >= opt.tRef ? opt.ref : 0;
+        const ym = y + opt.noise * rnd();
+        const e = r - ym;
+        // derivative input: error or measurement / 微分の入力: 偏差 or 測定値
+        let dTerm = 0;
+        if (opt.kd > 0 && opt.dMode !== 'none') {
+          const dIn = opt.dMode === 'err' ? e : -ym;
+          if (first) { prevIn = dIn; first = false; }
+          dState += ((dIn - prevIn) / dt - dState) * (dt / opt.tauF);  // filtered derivative
+          prevIn = dIn;
+          dTerm = opt.kd * dState;
+        }
+        // integral with optional conditional-integration anti-windup
+        // 積分（条件付き積分アンチワインドアップはオプション）
+        let iNext = integ + opt.ki * e * dt;
+        let u = opt.kp * e + iNext + dTerm;
+        if (opt.sat > 0) {
+          const uClip = Math.max(-opt.sat, Math.min(opt.sat, u));
+          if (uClip !== u) {
+            satSteps++;
+            if (opt.aw && Math.sign(e) === Math.sign(u)) iNext = integ;  // stop winding
+            u = opt.kp * e + iNext + dTerm;
+            u = Math.max(-opt.sat, Math.min(opt.sat, u));
+          }
+        }
+        integ = iNext;
+        y += ((KM * (u + (t >= opt.tDist ? opt.dU : 0)) - y) / TAU) * dt;
+        if (t > opt.tRef && y > peak) peak = y;
+        if (e145 === null && t >= 1.45) e145 = r - y;
+        eEnd = r - y;
+        if (i % step === 0) { ts.push(t); ysArr.push(y); usArr.push(u); }
+      }
+      return { ts, ys: ysArr, us: usArr, peak, os: Math.max(0, (peak / opt.ref - 1) * 100),
+               e145, eEnd, satTime: satSteps * dt };
+    }
+
+    // ---------- 6.2 P/I/D roles / 役割の体感 ----------
+    (function () {
+      const cv = $('rolesCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = Number($('rKp').value) * 1e-4;
+        const ki = Number($('rKi').value) * 1e-2;
+        const kd = Number($('rKd').value) * 5e-5;   // 0〜1e-3
+        $('rKpVal').textContent = kp.toExponential(1);
+        $('rKiVal').textContent = ki.toFixed(2);
+        $('rKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
+        const res = simulate({ kp, ki, kd, dMode: 'meas', tauF: 0.004, dt: 1e-5, ref: 300, dU: -0.05, tDist: 1.5 });
+        const x0 = 70, w = 660, h = 250, yMax = 450, tMax = 2.5;
+        drawAxes(ctx, x0, 26, w, h, '0', String(yMax), '回転数変化 [rad/s]');
+        // reference line / 目標線
+        const yr = 26 + h * ((yMax - 300) / yMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0 + (0.2 / tMax) * w, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('目標 300', x0 + w - 60, yr - 6);
+        // disturbance marker / 外乱マーカー
+        const xd = x0 + (1.5 / tMax) * w;
+        ctx.strokeStyle = c.border; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(xd, 26); ctx.lineTo(xd, 26 + h); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.fillText('負荷外乱', xd + 4, 40);
+        plotXY(ctx, res.ts, res.ys, x0, 26, w, h, tMax, 0, yMax, c.accent, 2.5);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
+        const essTheory = 300 / (1 + kp * KM);
+        $('rolesReadout').textContent =
+          `外乱前の残留誤差 ${res.e145.toFixed(1)} rad/s` +
+          (ki === 0 ? `（P単独の理論値 r/(1+KpKm) = ${essTheory.toFixed(1)}）` : '') +
+          ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
+      }
+      ['rKp', 'rKi', 'rKd'].forEach(id => $(id).addEventListener('input', redraw));
+      redraw();
+    })();
+
+    // ---------- 6.5 implementation reality / 実装の現実 ----------
+    (function () {
+      const cv = $('realCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const scen = $('wScen').value;
+        const dMode = $('wDmode').value;
+        const eta = Number($('wEta').value) / 100;
+        $('wEtaVal').textContent = eta.toFixed(2);
+        const kp = 1e-3, ki = 0.05, kd = dMode === 'none' ? 0 : 3e-5;
+        const td = kd / kp;                       // Td = Kd/Kp
+        const o = {
+          kp, ki, kd, dMode, tauF: Math.max(eta * td, 2 * DT),
+          sat: 0.5, aw: $('wAw').checked,
+          noise: $('wNoise').checked ? 3 : 0,
+          ref: scen === 'big' ? 1800 : 200, tEnd: 2.0,
+        };
+        const res = simulate(o);
+        const x0 = 70, w = 660, tMax = 2.0;
+        const yMax = scen === 'big' ? 2400 : 300;
+        // --- top: speed / 上段: 回転数 ---
+        const hT = 210;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
+        const yr = 24 + hT * ((yMax - o.ref) / yMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('目標 ' + o.ref, x0 + w - 70, yr - 6);
+        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, 0, yMax, c.accent, 2.4);
+        // --- bottom: duty / 下段: 制御入力 ---
+        const yB = 262, hB = 130;
+        drawAxes(ctx, x0, yB, w, hB, '-0.6', '0.6', '入力 [Duty]');
+        [0.5, -0.5].forEach(v => {
+          const yy = yB + hB * ((0.6 - v) / 1.2);
+          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+        });
+        ctx.fillStyle = '#c2373b'; ctx.textAlign = 'left';
+        ctx.fillText('飽和 ±0.5', x0 + 6, yB + 12);
+        const y0line = yB + hB * (0.6 / 1.2);
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -0.6, 0.6, '#2e8b57', 1.8);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        $('realReadout').textContent =
+          `オーバーシュート ${res.os.toFixed(1)} % | 飽和していた時間 ${res.satTime.toFixed(2)} s | ` +
+          (o.aw ? '条件付き積分: ON' : '条件付き積分: OFF') +
+          (o.noise ? ` | ノイズON（微分の毛羽立ち上限 ∝ Kp/η = ${(kp / eta).toExponential(1)}）` : '');
+      }
+      ['wScen', 'wDmode', 'wEta', 'wAw', 'wNoise'].forEach(id => {
+        $(id).addEventListener('input', redraw);
+        $(id).addEventListener('change', redraw);
+      });
+      redraw();
+    })();
+  })();
+  </script>
+</body>
+</html>
