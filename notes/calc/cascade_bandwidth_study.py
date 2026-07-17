@@ -75,6 +75,23 @@ for L in (0.0, 0.005, 0.012):
         flag = "" if ok and ov < 500 else "  ← 破綻"
         print(f"  {rr:4.2f}  {min(ov,999):6.1f}  {st:6.2f}{flag}")
 
+# dense sweep for the plot / 曲線用の密な掃引（0.01刻み・折れ線防止、表は上の粗い刻みのまま）
+# 下段の曲線は ITAE = ∫t·|e|dt。2%整定は「振動の山が帯に触れるか」で値が半周期ぶん
+# 飛ぶ本質的に不連続な指標のため、曲線表示には連続な ITAE を使う（谷の位置はほぼ同じ:
+# ITAE最小 L=0/5/12ms → 比率 0.32/0.30/0.26。2%整定最小は 0.30/0.30/0.25）。
+ratios_plot = np.round(np.arange(0.10, 1.0001, 0.01), 3)
+tvec_full = np.arange(int(T_END / DT)) * DT
+plot_results = {}
+for L in (0.0, 0.005, 0.012):
+    rows = []
+    for rr in ratios_plot:
+        y = simulate(rr * W_IN, L)
+        ov, _ = metrics(y)
+        ok = np.isfinite(y[-1]) and abs(y[-1] - 1) < 0.5
+        itae = np.sum(tvec_full * np.abs(y - 1.0)) * DT if ok else np.nan
+        rows.append((rr, ov, itae, ok))
+    plot_results[L] = rows
+
 # ---- plot ----
 import matplotlib
 matplotlib.use("Agg")
@@ -91,12 +108,12 @@ if jp:
 fig, axes = plt.subplots(1, 3, figsize=(13.5, 4.2))
 colors = {0.0: "tab:green", 0.005: "tab:blue", 0.012: "tab:red"}
 labels = {0.0: "L=0（理想）", 0.005: "L=5ms", 0.012: "L=12ms"}
-for L, rows in results.items():
+for L, rows in plot_results.items():
     rs = [r[0] for r in rows]
     ov = [min(r[1], 200) for r in rows]
     st = [r[2] for r in rows]
-    axes[0].plot(rs, ov, "o-", color=colors[L], label=labels[L])
-    axes[1].plot(rs, st, "o-", color=colors[L], label=labels[L])
+    axes[0].plot(rs, ov, "-", lw=2, color=colors[L], label=labels[L])
+    axes[1].plot(rs, st, "-", lw=2, color=colors[L], label=labels[L])
 axes[0].axvline(1/3, color="gray", ls=":", lw=1)
 axes[0].text(0.34, 120, "1/3", color="gray")
 axes[0].set_xlabel("帯域比 ω_out/ω_in")
@@ -105,8 +122,9 @@ axes[0].set_title("角度ステップのオーバーシュート")
 axes[0].legend(); axes[0].grid(alpha=0.3)
 axes[1].axvline(1/3, color="gray", ls=":", lw=1)
 axes[1].set_xlabel("帯域比 ω_out/ω_in")
-axes[1].set_ylabel("2%整定時間 [s]")
-axes[1].set_title("整定時間（攻めすぎると逆に遅くなる）")
+axes[1].set_ylabel("ITAE ∫t·|e|dt（小さいほど良い）")
+axes[1].set_title("誤差指標 ITAE（攻めすぎると悪化）")
+axes[1].set_ylim(0, 0.07)
 axes[1].legend(); axes[1].grid(alpha=0.3)
 tvec = np.arange(int(T_END / DT)) * DT
 for rr, lsty in [(0.2, "-"), (1/3, "-"), (0.5, "--"), (0.8, ":")]:

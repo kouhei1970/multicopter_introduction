@@ -255,6 +255,10 @@
       本当にそうなのか、同定済みの StampFly モデルで確かめてみましょう。
       下の教材で、帯域比 \(\omega_{out}/\omega_{in}\) とむだ時間 \(L\) を動かして、
       角度ステップ応答がどう変わるかを見てください。
+      下段の曲線は応答の良さの指標 <strong>ITAE</strong>
+      （時間重み付き誤差積分 \(\int t\,|e|\,dt\)。誤差の絶対値に経過時間の重みを掛けて
+      足し合わせたもので、あとまで残る誤差ほど重く数える。小さいほど「速く・きれいに」
+      収束）で、谷の位置＝ちょうどよい帯域比です。
     </p>
 
     <div class="sim-panel">
@@ -278,14 +282,19 @@
     <p class="src">
       条件: 内側はレートP（\(\zeta=0.7\) 設計、\(\omega_{in} \approx 36\) rad/s）、外側は角度P。
       むだ時間は制御入力に挿入。破線は帯域比 1/3（同じむだ時間）の参照応答。
+      下段の曲線に ITAE を使うのは、2%整定時間が本質的に不連続な指標
+      （振動の山が±2%帯に触れるか触れないかで値が半周期ぶん飛ぶ）で、
+      曲線として描くと階段状になるため。谷の位置はどちらの指標でもほぼ同じで、
+      選択中の点の2%整定は数値欄に表示している。
       Python での同一解析は notes/calc/cascade_bandwidth_study.py。
     </p>
 
     <div class="note-box">
       <strong>実験結果のまとめ — 「1/3」は経験則ではなく最適点:</strong>
-      整定時間が最小になるのは帯域比 <strong>0.25〜0.3</strong> で、
-      むだ時間が長いほど谷はわずかに低い比率側へ動きます（\(L=0\) で 0.30、
-      12 ms で 0.25）——攻めるなら下側に外すのが安全です。
+      応答が最良になる谷は帯域比 <strong>0.26〜0.32</strong> にあり
+      （ITAE 最小。2%整定の最小でも 0.25〜0.30）、むだ時間が長いほど谷は
+      低い比率側へ動きます（ITAE: \(L=0\) で 0.32、12 ms で 0.26）
+      ——攻めるなら下側に外すのが安全です。
       理想（\(L=0\)）では攻めても壊れ方が優しい——比率 1.0 でもオーバーシュートが
       増えるだけです。ところが現実（\(L=12\) ms）には<strong>崖</strong>があります。
       比率 0.5 で整定は3倍悪化し、<strong>0.8 以上では発散</strong>。
@@ -428,7 +437,7 @@
       <li>内側レートループは <strong>2次系近似</strong>で設計できる:
         \(K_p^{rate} = 1/(4\zeta^2 K \tau)\)。第4章の同定値がそのままゲインになる。</li>
       <li>外側の帯域は内側の <strong>1/3 前後</strong>が最適——シミュレーションでは
-        0.25〜0.3 に整定最小の谷（むだ時間が長いほど低い側へ）。
+        0.26〜0.32 に応答最良（ITAE最小）の谷（むだ時間が長いほど低い側へ）。
         むだ時間のある現実では攻めすぎると<strong>崖</strong>（12 ms なら比率 0.8 で発散）。</li>
       <li>積分器は置き場所で仕事が違う: <strong>内側I＝トルク外乱</strong>、
         <strong>外側I＝計測バイアス</strong>。\(T_i\) は交差周波数の1桁下に置けば位相コスト約2°。</li>
@@ -524,7 +533,7 @@
       const nd = Math.round(o.L / DT);
       const ub = new Float64Array(Math.max(1, nd));
       let head = 0, m = 0, r = 0, th = 0, thf = 0, intR = 0, intA = 0;
-      let peak = -1e9, lastOut = 0;
+      let peak = -1e9, lastOut = 0, itae = 0;
       const step = Math.round(o.sample / DT);
       const ts = [], ys = [];
       for (let i = 0; i < n; i++) {
@@ -546,23 +555,28 @@
         r += acc * DT; th += r * DT;
         if (th > peak) peak = th;
         if (Math.abs(th - o.thRef) > 0.02 * Math.max(1, Math.abs(o.thRef))) lastOut = i;
+        itae += t * Math.abs(th - o.thRef) * DT;   // 時間重み付き誤差積分 / ITAE
         if (i % step === 0) { ts.push(t); ys.push(th); }
       }
       const diverged = !isFinite(th) || Math.abs(th - o.thRef) > 0.5;
       return { ts, ys, final: th, peak, os: Math.max(0, (peak - o.thRef) * 100),
-               settle: (lastOut + 1) * DT, diverged };
+               settle: (lastOut + 1) * DT, itae, diverged };
     }
 
     // ---------- 5.4 bandwidth-separation explorer / 帯域分離エクスプローラ ----------
     (function () {
       const cv = $('bwCanvas'), ctx = cv.getContext('2d');
       const LS = [0, 0.005, 0.012];
+      // 0.01刻み: カーブが折れ線に見えないよう密にサンプリング（約50msで完了）
+      // dense 0.01-step sampling so the curve renders as a curve, not a polyline
       const RATIOS = [];
-      for (let rr = 0.10; rr <= 1.001; rr += 0.05) RATIOS.push(Math.round(rr * 100) / 100);
-      // precompute settling curves / 整定時間カーブを事前計算
+      for (let rr = 0.10; rr <= 1.0005; rr += 0.01) RATIOS.push(Math.round(rr * 1000) / 1000);
+      // 下段の曲線は ITAE。2%整定は振動の山が帯に触れるたびに値が飛ぶ不連続な指標で、
+      // 曲線として描くと階段になるため（数値表示には従来どおり2%整定を使う）
+      // curve metric = ITAE (continuous); 2% settling stays in the numeric readout
       const curves = LS.map(L => RATIOS.map(rr => {
         const res = simCascade({ kpA: rr * W_IN, L });
-        return res.diverged ? NaN : res.settle;
+        return res.diverged ? NaN : res.itae;
       }));
       const lColor = { 0: '#2e8b57', 0.005: '#0b5cad', 0.012: '#c2373b' };
       const lLabel = { 0: 'L=0（理想）', 0.005: 'L=5ms', 0.012: 'L=12ms' };
@@ -592,9 +606,9 @@
         ctx.fillStyle = c.fg; ctx.textAlign = 'center';
         ctx.fillText('時間 [s]（0〜2.5 s、角度ステップ指令）', x0 + w / 2, 30 + hTop + 16);
 
-        // --- bottom: settling vs ratio / 下: 整定時間 vs 帯域比 ---
-        const yB = 330, hB = 180, tsMax = 4;
-        drawAxes(ctx, x0, yB, w, hB, '0', String(tsMax), '2%整定 [s]');
+        // --- bottom: ITAE vs ratio / 下: 誤差指標 ITAE vs 帯域比 ---
+        const yB = 330, hB = 180, iMax = 0.07;
+        drawAxes(ctx, x0, yB, w, hB, '0', String(iMax), '誤差指標 ITAE');
         // 1/3 marker
         const xThird = x0 + ((1 / 3 - 0.1) / 0.9) * w;
         ctx.strokeStyle = c.border; ctx.setLineDash([3, 3]);
@@ -605,9 +619,9 @@
         LS.forEach((Lv, k) => {
           const xs = [], ys = [];
           RATIOS.forEach((rr, i) => {
-            if (isFinite(curves[k][i])) { xs.push(rr); ys.push(Math.min(curves[k][i], tsMax)); }
+            if (isFinite(curves[k][i])) { xs.push(rr); ys.push(Math.min(curves[k][i], iMax)); }
           });
-          plotXY(ctx, xs, ys, x0, yB, w, hB, 0.1, 1.0, 0, tsMax, lColor[Lv], Lv !== L, Lv === L ? 2.5 : 1.4);
+          plotXY(ctx, xs, ys, x0, yB, w, hB, 0.1, 1.0, 0, iMax, lColor[Lv], Lv !== L, Lv === L ? 2.5 : 1.4);
         });
         ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
         LS.forEach((Lv, k) => {
@@ -617,7 +631,7 @@
         // current point marker / 現在位置マーカー
         if (!cur.diverged) {
           const px = x0 + ((ratio - 0.1) / 0.9) * w;
-          const py = yB + hB * ((tsMax - Math.min(cur.settle, tsMax)) / tsMax);
+          const py = yB + hB * ((iMax - Math.min(cur.itae, iMax)) / iMax);
           ctx.fillStyle = lColor[L];
           ctx.beginPath(); ctx.arc(px, py, 6, 0, 2 * Math.PI); ctx.fill();
           ctx.strokeStyle = c.fg; ctx.lineWidth = 1.5; ctx.stroke();
@@ -628,7 +642,7 @@
         const settleTxt = cur.settle > 3.9 ? '4 s超' : cur.settle.toFixed(2) + ' s';
         $('bwReadout').textContent = cur.diverged
           ? `K_p^ang = ${(ratio * W_IN).toFixed(1)} 1/s | 発散！ むだ時間 ${(L * 1e3).toFixed(0)} ms では帯域比 ${ratio.toFixed(2)} は不安定です`
-          : `K_p^ang = ${(ratio * W_IN).toFixed(1)} 1/s | オーバーシュート ${cur.os.toFixed(1)} % | 2%整定 ${settleTxt}`;
+          : `K_p^ang = ${(ratio * W_IN).toFixed(1)} 1/s | オーバーシュート ${cur.os.toFixed(1)} % | 2%整定 ${settleTxt} | ITAE ${cur.itae.toFixed(4)}`;
       }
 
       $('bwRatio').addEventListener('input', redraw);
