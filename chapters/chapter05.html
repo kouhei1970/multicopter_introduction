@@ -1,0 +1,786 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第5章 姿勢のPID制御 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; width: 100%; }
+    .data-table caption { caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); padding-top: 0.4rem; text-align: left; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.6rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    figure.diagram { margin: 1.5rem 0; text-align: center; }
+    figure.diagram svg { max-width: 100%; height: auto; }
+    figure.diagram figcaption { font-size: 0.8rem; color: var(--fg-muted); text-align: left; margin-top: 0.4rem; }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 10rem; }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第5章</p>
+    <h1>姿勢のPID制御</h1>
+    <p class="subtitle">カスケード構造と2次系近似設計 — なぜ「まず角速度」なのか</p>
+  </header>
+
+  <main>
+    <p>
+      道具立ては揃いました。プラントのモデル（第3章）とその中の数字（第4章）を手に、
+      いよいよ姿勢制御に入ります。最初の設計判断は意外なところにあります——
+      <strong>制御したいのは「角度」なのに、実機の制御ソフトはまず「角速度」を制御する</strong>のです。
+      この章では、その理由を物理から説き起こし、レートループ→角度ループの
+      <strong>カスケード制御</strong>を実際に設計します。設計した制御系がどこまで攻められるのか、
+      「理想」と「現実（むだ時間）」の違いも体感してもらいます。
+    </p>
+
+    <h2>5.1 なぜ角度を直接制御しないのか — 積分遅れの連鎖</h2>
+    <p>
+      制御対象のマルチコプタは物理法則から逃れられません。運動方程式を思い出すと、
+      トルクは慣性モーメントをスケールファクターとして<strong>瞬時に</strong>角加速度になります
+      （\(\dot{\omega} = \tau / I\)——加速度とは、実質的に力そのものです）。
+      しかし角速度はそうはいきません。角加速度を<strong>1回積分</strong>しなければ現れないので、
+      遅れます。角度は<strong>さらにもう1回積分</strong>——もっと遅れます。
+    </p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 760 120" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="トルクから角度までの積分遅れの連鎖" font-family="sans-serif">
+        <defs>
+          <marker id="arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"/>
+          </marker>
+        </defs>
+        <text x="40" y="66" font-size="17" fill="currentColor">トルク τ</text>
+        <line x1="122" y1="60" x2="176" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="180" y="38" width="74" height="44" rx="8" fill="none" stroke="#2e8b57" stroke-width="2.5"/>
+        <text x="217" y="66" font-size="17" text-anchor="middle" fill="currentColor">1/I</text>
+        <text x="217" y="26" font-size="13" text-anchor="middle" fill="#2e8b57">即時</text>
+        <line x1="258" y1="60" x2="312" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="318" y="66" font-size="17" fill="currentColor">角加速度</text>
+        <line x1="392" y1="60" x2="446" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="450" y="38" width="60" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <text x="480" y="67" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
+        <text x="480" y="26" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 1</text>
+        <line x1="514" y1="60" x2="548" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="554" y="66" font-size="17" fill="currentColor">角速度</text>
+        <line x1="612" y1="60" x2="646" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <rect x="650" y="38" width="60" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <text x="680" y="67" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
+        <text x="680" y="26" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 2</text>
+        <text x="680" y="108" font-size="17" text-anchor="middle" fill="currentColor">→ 角度</text>
+      </svg>
+      <figcaption>
+        入力（トルク）から角度までは積分2回分の遅れ。角速度までなら1回分で済む。
+        制御で「どの信号を掴むか」は、この連鎖のどこに介入するかの選択である。
+      </figcaption>
+    </figure>
+
+    <p>
+      角度の誤差だけを見てトルクを決める「1段」の制御では、入力と出力の間に
+      2階積分分の遅れが挟まります。突風で角度がずらされたとき、
+      その情報が角度に現れてから修正が効き始めるまでが遠く、
+      <strong>タイムリーに追いつけない</strong>おそれがあります。
+      そこで発想を変えます。まず<strong>角速度</strong>を制御するのです。
+      角速度はトルクの1階積分ですから、角度より速く反応でき、
+      突発的な外乱に早めの対処ができます。角速度制御がうまく行ったら、
+      その外側に角度の制御を重ねる——<strong>まず角速度が早めの対処をし、
+      その後、角度をきっちり決める</strong>。これがカスケード制御です。
+    </p>
+
+    <h2>5.2 カスケード制御 — 内側を「1」にして、外側が発注する</h2>
+    <p>
+      もう一つの見方があります。フィードバック制御の目的は、突き詰めれば
+      <strong>入力（指令）と出力の関係を 1 にすること</strong>です。
+      指令通りに出力が出るなら、それで勝ちです。
+      角速度ループが「1」を達成している——つまり、指令した角速度が
+      そのまま実現される——なら、外側の角度ループは中身を気にする必要がありません。
+      「いまの角度誤差を解消するにはこの角速度が欲しい」と、
+      角速度制御系に<strong>発注</strong>すればよいのです。
+    </p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="カスケード制御のブロック線図" font-family="sans-serif">
+        <defs>
+          <marker id="arr2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
+            <polygon points="0,0 10,4 0,8" fill="currentColor"/>
+          </marker>
+        </defs>
+        <!-- outer loop box / 外側ループの囲み -->
+        <rect x="120" y="20" width="620" height="150" rx="10" fill="none" stroke="#2e8b57" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text x="130" y="40" font-size="13" fill="#2e8b57">外側: 角度ループ（遅い・きっちり）</text>
+        <!-- inner loop box / 内側ループの囲み -->
+        <rect x="330" y="50" width="390" height="105" rx="10" fill="none" stroke="#c2373b" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text x="340" y="68" font-size="13" fill="#c2373b">内側: 角速度ループ（速い・早めの対処）＝これが「1」になる</text>
+        <!-- theta_ref -->
+        <text x="8" y="105" font-size="15" fill="currentColor">θ_ref</text>
+        <line x1="52" y1="100" x2="130" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- outer sum -->
+        <circle cx="145" cy="100" r="13" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="139" y="105" font-size="14" fill="currentColor">＋</text>
+        <line x1="158" y1="100" x2="190" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- angle ctrl -->
+        <rect x="193" y="78" width="90" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="238" y="98" font-size="14" text-anchor="middle" fill="currentColor">角度制御</text>
+        <text x="238" y="115" font-size="12" text-anchor="middle" fill="currentColor">P（＋I）</text>
+        <line x1="283" y1="100" x2="345" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="292" y="92" font-size="13" fill="currentColor">r_cmd</text>
+        <!-- inner sum -->
+        <circle cx="360" cy="100" r="13" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="354" y="105" font-size="14" fill="currentColor">＋</text>
+        <line x1="373" y1="100" x2="400" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- rate ctrl -->
+        <rect x="403" y="78" width="96" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="451" y="98" font-size="14" text-anchor="middle" fill="currentColor">角速度制御</text>
+        <text x="451" y="115" font-size="12" text-anchor="middle" fill="currentColor">PID</text>
+        <line x1="499" y1="100" x2="526" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- motor+body -->
+        <rect x="529" y="78" width="104" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="581" y="98" font-size="14" text-anchor="middle" fill="currentColor">モータ＋機体</text>
+        <text x="581" y="115" font-size="12" text-anchor="middle" fill="currentColor">K/(s(τs+1))</text>
+        <line x1="633" y1="100" x2="672" y2="100" stroke="currentColor" stroke-width="2"/>
+        <text x="676" y="105" font-size="15" fill="currentColor">r</text>
+        <!-- gyro feedback (inner) -->
+        <line x1="662" y1="100" x2="662" y2="140" stroke="currentColor" stroke-width="2"/>
+        <line x1="662" y1="140" x2="360" y2="140" stroke="currentColor" stroke-width="2"/>
+        <line x1="360" y1="140" x2="360" y2="113" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="500" y="135" font-size="12" fill="currentColor">ジャイロ（角速度を直接・即座に測れる）−</text>
+        <!-- integrator to angle -->
+        <line x1="692" y1="100" x2="712" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <rect x="714" y="82" width="36" height="36" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="732" y="107" font-size="17" text-anchor="middle" fill="currentColor">∫</text>
+        <!-- angle feedback (outer) -->
+        <line x1="732" y1="118" x2="732" y2="190" stroke="currentColor" stroke-width="2"/>
+        <line x1="732" y1="190" x2="145" y2="190" stroke="currentColor" stroke-width="2"/>
+        <line x1="145" y1="190" x2="145" y2="113" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="330" y="185" font-size="12" fill="currentColor">姿勢推定（角度 θ は推定フィルタ経由）−</text>
+      </svg>
+      <figcaption>
+        カスケード制御のブロック線図。内側（角速度）ループはジャイロの速い測定で
+        トルクを直接動かし、外側（角度）ループは「欲しい角速度」を内側に発注する。
+        角速度はジャイロで<strong>直接・即座に</strong>測れるのに対し、角度は
+        センサ融合（第7章）を経てくる——速い測定を速いループに割り当てる構造でもある。
+      </figcaption>
+    </figure>
+
+    <div class="note-box">
+      <strong>設計の分業:</strong> 内側ループの仕事は「速さ」——突発外乱を角度に波及する前に
+      受け止めること。外側ループの仕事は「正確さ」——角度を狙った値にきっちり合わせること。
+      1つのループに両方を頼むより、役割を分けたほうが設計も調整も見通しがよくなります。
+      ドローンに限らず、モータドライブ（電流→速度→位置）などでも定番の構造です。
+    </div>
+
+    <h2>5.3 内側レートループの設計 — 2次系近似</h2>
+    <p>
+      では内側ループを設計しましょう。第4章で組み立てたロール軸のプラント
+      （正規化入力 → 角速度）は、モータの一次遅れと機体の積分でこう書けます:
+    </p>
+    <div class="math-scroll">
+    $$G_{rate}(s) = \frac{K}{s\,(\tau s + 1)},
+      \qquad K \approx 102\ \mathrm{rad/s^2},\quad \tau = 0.02\ \mathrm{s}$$
+    </div>
+    <p>
+      これにレートのP制御（ゲイン \(K_{p}^{rate}\)）を巻くと、閉ループは見慣れた
+      <strong>2次系</strong>になります:
+    </p>
+    <div class="math-scroll">
+    $$\frac{r}{r_{cmd}} = \frac{\omega_n^2}{s^2 + 2\zeta\omega_n s + \omega_n^2},
+      \qquad \omega_n = \sqrt{\frac{K_{p}^{rate}\,K}{\tau}},
+      \quad \zeta = \frac{1}{2\sqrt{K_{p}^{rate}\,K\,\tau}}$$
+    </div>
+    <p>
+      2次系なら挙動は全部知っています。減衰係数 \(\zeta\) を決めれば
+      オーバーシュートが決まり、\(\omega_n\) が速さを決めます。
+      そこで設計は「\(\zeta\) を選ぶ → ゲインが決まる」の一直線です:
+    </p>
+    <div class="math-scroll">
+    $$K_{p}^{rate} = \frac{1}{4\zeta^2 K \tau}
+      \;\xrightarrow{\ \zeta = 0.7\ }\;
+      K_{p}^{rate} \approx 0.25,
+      \qquad \omega_n \approx 36\ \mathrm{rad/s}\ (\approx 5.7\ \mathrm{Hz})$$
+    </div>
+    <p>
+      たった1行の式ですが、中身は第4章の実測が詰まっています——\(K\) には推力係数と
+      アーム長と慣性モーメント、\(\tau\) にはモータの実効時定数。
+      <strong>プラントを測ったからゲインが計算できる</strong>のです。
+      これが「2次モデル近似設計」で、ワークショップで実際に使われて
+      実機でも案外うまく飛んだ、実績のある流儀です。
+      （もう一つの流儀「ループ整形」は次章で扱います。）
+    </p>
+
+    <table class="data-table">
+      <thead><tr><th>ループ</th><th>軸</th><th>\(K_p\)</th><th>\(T_i\) [s]</th><th>\(T_d\) [s]</th></tr></thead>
+      <tbody>
+        <tr><td rowspan="3">レート（内側）</td><td>roll</td><td>\(9.76\times10^{-4}\) N·m/(rad/s)</td><td>0.7</td><td>0.010</td></tr>
+        <tr><td>pitch</td><td>\(1.43\times10^{-3}\) N·m/(rad/s)</td><td>0.7</td><td>0.025</td></tr>
+        <tr><td>yaw</td><td>\(1.90\times10^{-3}\) N·m/(rad/s)</td><td>0.8</td><td>0.010</td></tr>
+        <tr><td rowspan="2">角度（外側）</td><td>roll</td><td>5.0 1/s</td><td>2.0</td><td>0.04</td></tr>
+        <tr><td>pitch</td><td>5.0 1/s</td><td>2.0</td><td>0.04</td></tr>
+      </tbody>
+      <caption>
+        実機 StampFly ファームウェアの姿勢制御ゲイン（飛行実績値）。レートループの \(K_p\) は
+        物理単位（トルク指令）で、慣性モーメントで割ると本文の正規化ゲインに対応する。
+        離散化は 400 Hz の Tustin 変換（双一次変換: 微分方程式をデジタル計算用の漸化式に
+        直す標準的な方法）、微分は指令でなく測定値側に掛ける D-on-M 構成。
+      </caption>
+    </table>
+
+    <h2>5.4 外側ループはどこまで攻められるか — 「1/3ルール」を実証する</h2>
+    <p>
+      内側が「1」なら、外側の角度ループは楽勝です。\(\dot\theta = r = r_{cmd}\) ですから、
+      角度Pゲイン \(K_p^{ang}\) で \(r_{cmd} = K_p^{ang}(\theta_{ref}-\theta)\) と発注すれば
+    </p>
+    <div class="math-scroll">
+    $$\frac{\theta}{\theta_{ref}} = \frac{1}{\frac{1}{K_p^{ang}}s + 1}$$
+    </div>
+    <p>
+      ——時定数 \(1/K_p^{ang}\) の一次遅れ。オーバーシュートなし、ゲインを上げるほど速い、
+      いいことずくめです。<strong>理想的には、外側は比例制御だけでも結構いける</strong>のです。
+    </p>
+    <p>
+      しかし「内側が 1」はどこまで本当でしょうか。内側ループにも帯域があり
+      （\(\omega_n \approx 36\) rad/s）、それより速い指令には追従できません。
+      さらに現実のシステムには<strong>むだ時間</strong>——センサの読み出し、フィルタ、
+      制御周期、モータ指令の反映までの純粋な待ち時間——があります。
+      StampFly の飛行データからは 10 ms 前後のむだ時間が同定されています。
+      外側を攻めるほど「内側 ≒ 1」の仮定が壊れた領域を使うことになり、どこかで破綻するはずです。
+    </p>
+    <p>
+      経験則では、外側の帯域は内側の <strong>1/3 前後</strong>が目安とされます。
+      本当にそうなのか、同定済みの StampFly モデルで確かめてみましょう。
+      下の教材で、帯域比 \(\omega_{out}/\omega_{in}\) とむだ時間 \(L\) を動かして、
+      角度ステップ応答がどう変わるかを見てください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="bwCanvas" width="760" height="540"></canvas>
+      <div class="sim-opts">
+        <label>帯域比 \(\omega_{out}/\omega_{in}\):
+          <input type="range" id="bwRatio" min="10" max="100" value="33">
+          <span id="bwRatioVal">0.33</span>
+        </label>
+        <label>むだ時間 L:
+          <select id="bwDead">
+            <option value="0">0 ms（理想）</option>
+            <option value="0.005">5 ms</option>
+            <option value="0.012" selected>12 ms（実測級）</option>
+          </select>
+        </label>
+      </div>
+      <div class="sim-readout" id="bwReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 内側はレートP（\(\zeta=0.7\) 設計、\(\omega_{in} \approx 36\) rad/s）、外側は角度P。
+      むだ時間は制御入力に挿入。破線は帯域比 1/3（同じむだ時間）の参照応答。
+      Python での同一解析は notes/calc/cascade_bandwidth_study.py。
+    </p>
+
+    <div class="note-box">
+      <strong>実験結果のまとめ — 「1/3」は経験則ではなく最適点:</strong>
+      整定時間が最小になるのは帯域比 <strong>0.25〜0.3</strong> で、
+      むだ時間が長いほど谷はわずかに低い比率側へ動きます（\(L=0\) で 0.30、
+      12 ms で 0.25）——攻めるなら下側に外すのが安全です。
+      理想（\(L=0\)）では攻めても壊れ方が優しい——比率 1.0 でもオーバーシュートが
+      増えるだけです。ところが現実（\(L=12\) ms）には<strong>崖</strong>があります。
+      比率 0.5 で整定は3倍悪化し、<strong>0.8 以上では発散</strong>。
+      しかも谷を超えてゲインを上げると、<strong>整定はむしろ遅くなります</strong>。
+      「外側を攻めれば機敏になる」という直感は、むだ時間のある現実では成り立たないのです。
+    </div>
+
+    <h2>5.5 積分器は1本ごとに仕事が違う</h2>
+    <p>
+      ここまで内側も外側もP制御で話してきましたが、実機のファームウェアは
+      内側に I 項を持ち、外側にも入れています（5.3節の表: \(T_i\) = 0.7 s / 2.0 s）。
+      なぜ2本も積分器が要るのでしょうか。実は、<strong>置き場所によって消せる誤差が違う</strong>のです。
+    </p>
+    <ul>
+      <li><strong>内側の I</strong> は<strong>トルクの定常外乱</strong>を消します。
+        重心のずれ、モータの個体差、プロペラの劣化——機体には常に一定の「トリムずれ」
+        トルクが乗っています。P制御だけだと、これを打ち消すトルクを出すために
+        誤差が残り続けます（下の実験Aで、角度に約 1.9° のオフセットが残ります）。</li>
+      <li><strong>外側の I</strong> は<strong>レート計測のバイアス</strong>まで消せます。
+        ジャイロにバイアス（真値からの一定のずれ）があると、内側ループは
+        「計測された角速度」を指令に合わせるだけなので、真の角速度にはバイアス分の
+        ずれが残り、角度がずれた所で釣り合ってしまいます。これは内側の I では
+        原理的に消せません——誤差がループの「測定」側に入っているからです。</li>
+    </ul>
+    <p>下の教材で、外乱の種類と積分器の組み合わせを変えて確かめてください。</p>
+
+    <div class="sim-panel">
+      <canvas id="intCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label><input type="radio" name="intExp" value="A" checked> 実験A: トリムずれトルク（t=1.5sで印加）</label>
+        <label><input type="radio" name="intExp" value="B"> 実験B: ジャイロバイアス 0.1 rad/s</label>
+        <label><input type="checkbox" id="intInner" checked> 内側 I（\(T_i\)=0.7s）</label>
+        <label><input type="checkbox" id="intOuter"> 外側 I（\(T_i\)=2.0s）</label>
+      </div>
+      <div class="sim-readout" id="intReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 帯域比 1/3・むだ時間 12 ms・\(T_i\) は実機値。実験Aの外乱は角加速度換算
+      10 rad/s²（トリムずれ相当）、実験Bはジャイロ出力に +0.1 rad/s の一定バイアス。
+      理論オフセット: 実験A（Iなし）\(d/(K K_p^{rate} K_p^{ang})=1.89°\)、
+      実験B（外側Iなし）\(-b/K_p^{ang}=-0.48°\)。
+      Python での同一解析は notes/calc/cascade_integrator_study.py。
+    </p>
+
+    <div class="note-box">
+      <strong>Iのコストはほぼタダ？:</strong> 積分器を足す代償は、交差周波数
+      （ループの応答速度を決める周波数）での位相遅れ \(\arctan(1/(\omega T_i))\) です。
+      実機の \(T_i\) で計算すると内側 2.3°・外側 2.4°——どちらも \(T_i\) を
+      交差周波数の1桁下に置くことで、<strong>安定余裕をほとんど食わずに定常誤差だけを
+      消す</strong>設計になっています。ただし出力が飽和する場面では積分器は
+      溜まりすぎる（ワインドアップ）ので、実機は条件付き積分（飽和中は積分を止める）
+      というアンチワインドアップ処理と、各段の出力制限を併用しています。
+      外側の I を強くしすぎると位相を食ってカスケードの利点を殺すので、
+      「外側にも<em>場合によっては</em>入れる」——控えめに、が実務の相場です。
+    </div>
+
+    <h2>5.6 突風に強いのはなぜか — 1段PID vs カスケード</h2>
+    <p>
+      最後に、この章の主張「まず角速度」を正面から検証します。
+      対戦カードは、<strong>角度1段PID</strong>（角度誤差からPIDで直接トルクを決める）対
+      <strong>カスケード</strong>。どちらも同じ機体・同じむだ時間で、
+      それぞれ<strong>ベストに調整</strong>してあります。違いは1点だけ——
+      角速度の情報をどこから得るかです。カスケードは<strong>ジャイロで直接</strong>測ります。
+      1段PIDは角速度を測る場所を持たないので、<strong>角度（推定フィルタ経由）を
+      微分して作る</strong>しかありません。フィルタと微分でおよそ 30 ms 遅れた
+      角速度もどきです。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="gustCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label>突風の強さ:
+          <input type="range" id="gustAmp" min="10" max="40" value="25">
+          <span id="gustAmpVal">25</span> rad/s²
+        </label>
+        <label><input type="checkbox" id="gustSameGain"> 1段PIDにカスケードと同じゲインを与える</label>
+      </div>
+      <div class="sim-readout" id="gustReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 突風＝0.2 秒間の一定トルク外乱（角加速度換算）。両者ともむだ時間 12 ms・
+      角度は時定数 20 ms の推定フィルタ経由。1段PIDのレート推定は微分＋10 ms フィルタ。
+      ゲインは各構成で外乱応答が最良になるよう探索済み（1段: \(K_p^{rate}\)相当 0.225・
+      角度換算 3.0 / カスケード: 0.25・11.9）。
+      探索の再現は notes/qa_log.md 参照。
+    </p>
+
+    <p>
+      同じ強さの突風に対して、カスケードは最大傾き・復帰時間とも<strong>半分以下</strong>です。
+      1段PID側のゲインをこれ以上上げると（チェックボックスで体験できます）発振・発散します。
+      遅れた角速度もどきで強く踏ん張ろうとすると、遅れの分だけ「踏むタイミング」がずれて、
+      自分で揺れを育ててしまうからです。
+      <strong>勝敗を分けたのは制御則の賢さではなく、速い測定（ジャイロ）を
+      速いループに直結できる構造</strong>——これがカスケード制御の本当の強みです。
+    </p>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>トルク→角加速度は<strong>即時</strong>、角速度は積分1回、角度は積分2回の遅れ。
+        だから<strong>まず角速度</strong>を制御し、外側で角度を決める（カスケード）。</li>
+      <li>フィードバックの目的は入出力を「1」にすること。内側が 1 なら、
+        外側は角速度を<strong>発注</strong>するだけでよい。理想では外側はPだけで一次遅れの綺麗な応答。</li>
+      <li>内側レートループは <strong>2次系近似</strong>で設計できる:
+        \(K_p^{rate} = 1/(4\zeta^2 K \tau)\)。第4章の同定値がそのままゲインになる。</li>
+      <li>外側の帯域は内側の <strong>1/3 前後</strong>が最適——シミュレーションでは
+        0.25〜0.3 に整定最小の谷（むだ時間が長いほど低い側へ）。
+        むだ時間のある現実では攻めすぎると<strong>崖</strong>（12 ms なら比率 0.8 で発散）。</li>
+      <li>積分器は置き場所で仕事が違う: <strong>内側I＝トルク外乱</strong>、
+        <strong>外側I＝計測バイアス</strong>。\(T_i\) は交差周波数の1桁下に置けば位相コスト約2°。</li>
+      <li>突風への強さの源泉は、<strong>ジャイロの速い測定を速い内側ループに直結する構造</strong>。
+        1段PIDは角速度を微分で作るしかなく、ベスト調整でも最大傾き・復帰とも2倍以上劣る。</li>
+    </ul>
+    <p>
+      2次系近似は「\(\zeta\) を選べば終わり」の明快な設計でしたが、むだ時間は
+      近似の外に置いたままでした。実機 StampFly のゲインは、むだ時間も含めて
+      周波数領域で「位相余裕」と「交差周波数」を直接指定する<strong>ループ整形</strong>で
+      設計されています。次章では同じプラントを周波数の目で見直し、
+      5.4 節の「崖」の正体を種明かしします。
+    </p>
+
+    <p class="src">
+      本章の対話記録: notes/qa_log.md の Q5-1〜Q5-5。数値実験の再現コードは
+      notes/calc/cascade_bandwidth_study.py（帯域分離）,
+      cascade_integrator_study.py（積分器の役割）。
+      実機ゲインはファームウェア params.cpp の飛行実績値（2026-06-27）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter04.html">← 第4章 モータとプロペラ</a>
+      <span>第6章 ループ整形（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Chapter 5 interactive sims / 第5章の教材シミュレーション
+  // すべて第4章までの同定値によるロール軸モデル:
+  //   u --(1/(τs+1))--> m --(×K)--> 角加速度 --∫--> r --∫--> θ, むだ時間L
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const K = 102.0, TAU = 0.02, ZETA = 0.7;
+    const KP_R = 1 / (4 * ZETA * ZETA * K * TAU);      // ≈0.25
+    const W_IN = Math.sqrt(KP_R * K / TAU);            // ≈36 rad/s
+    const DT = 2e-4;
+    const DEG = 180 / Math.PI;
+    const $ = id => document.getElementById(id);
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    // shared plot helpers / 共通の描画ヘルパ
+    function drawAxes(ctx, x0, y0, w, h, yMinLabel, yMaxLabel, yLabel) {
+      const c = themeColors();
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(yMaxLabel, x0 - 6, y0 + 10);
+      ctx.fillText(yMinLabel, x0 - 6, y0 + h);
+      ctx.save(); ctx.translate(x0 - 44, y0 + h / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0); ctx.restore();
+    }
+
+    function plotXY(ctx, xs, ys, x0, y0, w, h, xMin, xMax, yMin, yMax, color, dashed, width) {
+      ctx.strokeStyle = color; ctx.lineWidth = width || 2.2;
+      if (dashed) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      let started = false;
+      for (let i = 0; i < xs.length; i++) {
+        const xx = x0 + ((xs[i] - xMin) / (xMax - xMin)) * w;
+        const yy = y0 + h * ((yMax - Math.max(yMin, Math.min(yMax, ys[i]))) / (yMax - yMin));
+        if (!started) { ctx.moveTo(xx, yy); started = true; } else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    // generic cascade step / カスケード一般形（外乱・バイアス・I項・むだ時間つき）
+    function simCascade(opts) {
+      const o = Object.assign({
+        kpA: W_IN / 3, kpR: KP_R, L: 0.012, tiR: 0, tiA: 0,
+        thRef: 1.0, dAcc: 0, dT0: 1e9, dT1: 1e9, bias: 0, tEnd: 4.0,
+        tauTh: 0,               // angle-measurement filter (0 = ideal) / 角度推定フィルタ
+        sample: 0.002,
+      }, opts);
+      const n = Math.round(o.tEnd / DT);
+      const nd = Math.round(o.L / DT);
+      const ub = new Float64Array(Math.max(1, nd));
+      let head = 0, m = 0, r = 0, th = 0, thf = 0, intR = 0, intA = 0;
+      let peak = -1e9, lastOut = 0;
+      const step = Math.round(o.sample / DT);
+      const ts = [], ys = [];
+      for (let i = 0; i < n; i++) {
+        const t = i * DT;
+        if (o.tauTh > 0) thf += (th - thf) / o.tauTh * DT; else thf = th;
+        const rMeas = r + o.bias;
+        const eA = o.thRef - thf;
+        let rCmd;
+        if (o.tiA > 0) { intA += eA * DT; rCmd = o.kpA * (eA + intA / o.tiA); }
+        else rCmd = o.kpA * eA;
+        const eR = rCmd - rMeas;
+        let u;
+        if (o.tiR > 0) { intR += eR * DT; u = o.kpR * (eR + intR / o.tiR); }
+        else u = o.kpR * eR;
+        let ue;
+        if (nd > 0) { ue = ub[head]; ub[head] = u; head = (head + 1) % nd; } else ue = u;
+        m += (ue - m) / TAU * DT;
+        const acc = K * m + ((t >= o.dT0 && t < o.dT1) ? o.dAcc : 0);
+        r += acc * DT; th += r * DT;
+        if (th > peak) peak = th;
+        if (Math.abs(th - o.thRef) > 0.02 * Math.max(1, Math.abs(o.thRef))) lastOut = i;
+        if (i % step === 0) { ts.push(t); ys.push(th); }
+      }
+      const diverged = !isFinite(th) || Math.abs(th - o.thRef) > 0.5;
+      return { ts, ys, final: th, peak, os: Math.max(0, (peak - o.thRef) * 100),
+               settle: (lastOut + 1) * DT, diverged };
+    }
+
+    // ---------- 5.4 bandwidth-separation explorer / 帯域分離エクスプローラ ----------
+    (function () {
+      const cv = $('bwCanvas'), ctx = cv.getContext('2d');
+      const LS = [0, 0.005, 0.012];
+      const RATIOS = [];
+      for (let rr = 0.10; rr <= 1.001; rr += 0.05) RATIOS.push(Math.round(rr * 100) / 100);
+      // precompute settling curves / 整定時間カーブを事前計算
+      const curves = LS.map(L => RATIOS.map(rr => {
+        const res = simCascade({ kpA: rr * W_IN, L });
+        return res.diverged ? NaN : res.settle;
+      }));
+      const lColor = { 0: '#2e8b57', 0.005: '#0b5cad', 0.012: '#c2373b' };
+      const lLabel = { 0: 'L=0（理想）', 0.005: 'L=5ms', 0.012: 'L=12ms' };
+
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const ratio = Number($('bwRatio').value) / 100;
+        $('bwRatioVal').textContent = ratio.toFixed(2);
+        const L = Number($('bwDead').value);
+        const cur = simCascade({ kpA: ratio * W_IN, L });
+        const ref = simCascade({ kpA: W_IN / 3, L });
+
+        // --- top: step response / 上: ステップ応答 ---
+        const x0 = 70, w = 660, hTop = 250;
+        drawAxes(ctx, x0, 30, w, hTop, '0', '2', '角度（目標=1）');
+        // target line
+        const yTarget = 30 + hTop * ((2 - 1) / 2);
+        ctx.strokeStyle = c.border; ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(x0, yTarget); ctx.lineTo(x0 + w, yTarget); ctx.stroke();
+        ctx.setLineDash([]);
+        plotXY(ctx, ref.ts, ref.ys, x0, 30, w, hTop, 0, 2.5, 0, 2, c.muted, true, 1.5);
+        plotXY(ctx, cur.ts, cur.ys, x0, 30, w, hTop, 0, 2.5, 0, 2, lColor[L], false, 2.5);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = c.muted; ctx.fillText('－－ 比率1/3（参照）', x0 + 8, 26);
+        ctx.fillStyle = lColor[L]; ctx.fillText('比率 ' + ratio.toFixed(2), x0 + 150, 26);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]（0〜2.5 s、角度ステップ指令）', x0 + w / 2, 30 + hTop + 16);
+
+        // --- bottom: settling vs ratio / 下: 整定時間 vs 帯域比 ---
+        const yB = 330, hB = 180, tsMax = 4;
+        drawAxes(ctx, x0, yB, w, hB, '0', String(tsMax), '2%整定 [s]');
+        // 1/3 marker
+        const xThird = x0 + ((1 / 3 - 0.1) / 0.9) * w;
+        ctx.strokeStyle = c.border; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(xThird, yB); ctx.lineTo(xThird, yB + hB); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('1/3', xThird + 4, yB + 14);
+        LS.forEach((Lv, k) => {
+          const xs = [], ys = [];
+          RATIOS.forEach((rr, i) => {
+            if (isFinite(curves[k][i])) { xs.push(rr); ys.push(Math.min(curves[k][i], tsMax)); }
+          });
+          plotXY(ctx, xs, ys, x0, yB, w, hB, 0.1, 1.0, 0, tsMax, lColor[Lv], Lv !== L, Lv === L ? 2.5 : 1.4);
+        });
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        LS.forEach((Lv, k) => {
+          ctx.fillStyle = lColor[Lv];
+          ctx.fillText(lLabel[Lv], x0 + 8 + k * 110, yB - 6);
+        });
+        // current point marker / 現在位置マーカー
+        if (!cur.diverged) {
+          const px = x0 + ((ratio - 0.1) / 0.9) * w;
+          const py = yB + hB * ((tsMax - Math.min(cur.settle, tsMax)) / tsMax);
+          ctx.fillStyle = lColor[L];
+          ctx.beginPath(); ctx.arc(px, py, 6, 0, 2 * Math.PI); ctx.fill();
+          ctx.strokeStyle = c.fg; ctx.lineWidth = 1.5; ctx.stroke();
+        }
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('帯域比 ω_out/ω_in', x0 + w / 2, yB + hB + 16);
+
+        const settleTxt = cur.settle > 3.9 ? '4 s超' : cur.settle.toFixed(2) + ' s';
+        $('bwReadout').textContent = cur.diverged
+          ? `K_p^ang = ${(ratio * W_IN).toFixed(1)} 1/s | 発散！ むだ時間 ${(L * 1e3).toFixed(0)} ms では帯域比 ${ratio.toFixed(2)} は不安定です`
+          : `K_p^ang = ${(ratio * W_IN).toFixed(1)} 1/s | オーバーシュート ${cur.os.toFixed(1)} % | 2%整定 ${settleTxt}`;
+      }
+
+      $('bwRatio').addEventListener('input', redraw);
+      $('bwDead').addEventListener('change', redraw);
+      redraw();
+    })();
+
+    // ---------- 5.5 integrator roles / 積分器の仕事 ----------
+    (function () {
+      const cv = $('intCanvas'), ctx = cv.getContext('2d');
+
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const exp = document.querySelector('input[name="intExp"]:checked').value;
+        const tiR = $('intInner').checked ? 0.7 : 0;
+        const tiA = $('intOuter').checked ? 2.0 : 0;
+        const base = { kpA: W_IN / 3, L: 0.012, tiR, tiA, thRef: 0, sample: 0.004 };
+        const o = exp === 'A'
+          ? Object.assign(base, { dAcc: 10, dT0: 1.5, dT1: 1e9, tEnd: 6.0 })
+          : Object.assign(base, { bias: 0.1, tEnd: 8.0 });
+        const res = simCascade(o);
+        const ysDeg = res.ys.map(v => v * DEG);
+        const yMin = exp === 'A' ? -0.6 : -0.8, yMax = exp === 'A' ? 2.4 : 0.2;
+        const x0 = 70, w = 660, h = 250;
+        drawAxes(ctx, x0, 26, w, h, yMin.toFixed(1), yMax.toFixed(1), '角度 [deg]');
+        // zero line
+        const y0line = 26 + h * (yMax / (yMax - yMin));
+        ctx.strokeStyle = c.border; ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        ctx.setLineDash([]);
+        // theory line / 理論オフセット線
+        let theory = 0;
+        if (exp === 'A' && tiR === 0 && tiA === 0) theory = 10 / (K * KP_R * (W_IN / 3)) * DEG;
+        if (exp === 'B' && tiA === 0) theory = -0.1 / (W_IN / 3) * DEG;
+        if (theory !== 0) {
+          const yy = 26 + h * ((yMax - theory) / (yMax - yMin));
+          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = '#c2373b'; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+          ctx.fillText('理論オフセット ' + theory.toFixed(2) + '°', x0 + w - 6, yy - 5);
+        }
+        if (exp === 'A') {
+          const xd = x0 + (1.5 / o.tEnd) * w;
+          ctx.strokeStyle = c.muted; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(xd, 26); ctx.lineTo(xd, 26 + h); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+          ctx.fillText('外乱印加', xd + 4, 40);
+        }
+        plotXY(ctx, res.ts, ysDeg, x0, 26, w, h, 0, o.tEnd, yMin, yMax, c.accent, false, 2.5);
+        ctx.fillStyle = c.fg; ctx.font = '12px sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]（0〜' + o.tEnd + ' s、目標角度 0°）', x0 + w / 2, 26 + h + 16);
+
+        const cfg = (tiR ? 'PI' : 'P') + '-' + (tiA ? 'PI' : 'P');
+        const fin = res.final * DEG;
+        let msg;
+        if (Math.abs(fin) < 0.05) msg = '定常誤差なし — この構成はこの外乱を消せます';
+        else msg = `定常誤差 ${fin.toFixed(2)}° が残る — この構成ではこの外乱を消せません`;
+        $('intReadout').textContent = `構成 内側-外側: ${cfg} | 最終角度 ${fin.toFixed(3)}° | ${msg}`;
+      }
+
+      document.querySelectorAll('input[name="intExp"]').forEach(el => el.addEventListener('change', redraw));
+      $('intInner').addEventListener('change', redraw);
+      $('intOuter').addEventListener('change', redraw);
+      redraw();
+    })();
+
+    // ---------- 5.6 gust: single PID vs cascade / 突風対決 ----------
+    (function () {
+      const cv = $('gustCanvas'), ctx = cv.getContext('2d');
+      const TAU_TH = 0.02;      // attitude-estimate filter / 姿勢推定フィルタ
+      const TAU_D = 0.01;       // derivative filter (single PID) / 微分フィルタ
+      const L = 0.012, T_END = 3.5, G0 = 0.5, G1 = 0.7;
+
+      // single-loop PID: rate from differentiated filtered angle
+      // 1段PID: 角速度は「フィルタ済み角度の微分」で推定するしかない
+      function simSingle(kpR, kpA, gust) {
+        const n = Math.round(T_END / DT);
+        const nd = Math.round(L / DT);
+        const ub = new Float64Array(nd);
+        let head = 0, m = 0, r = 0, th = 0, thf = 0, thf2 = 0, prev = 0, intR = 0;
+        const step = Math.round(0.002 / DT);
+        const ts = [], ys = [];
+        let peak = 0, lastOut = 0;
+        for (let i = 0; i < n; i++) {
+          const t = i * DT;
+          thf += (th - thf) / TAU_TH * DT;
+          thf2 += (thf - thf2) / TAU_D * DT;
+          const rateEst = (thf2 - prev) / DT; prev = thf2;
+          const eR = kpA * (0 - thf) - rateEst;
+          intR += eR * DT;
+          const u = kpR * (eR + intR / 0.7);
+          const ue = ub[head]; ub[head] = u; head = (head + 1) % nd;
+          m += (ue - m) / TAU * DT;
+          const acc = K * m + ((t >= G0 && t < G1) ? gust : 0);
+          r += acc * DT; th += r * DT;
+          const a = Math.abs(th);
+          if (a > peak) peak = a;
+          if (t >= G1 && a * DEG > 1.0) lastOut = i;
+          if (i % step === 0) { ts.push(t); ys.push(th * DEG); }
+        }
+        return { ts, ys, peak: peak * DEG, rec: Math.max(0, (lastOut + 1) * DT - G1),
+                 diverged: !isFinite(th) || Math.abs(th) * DEG > 45 };
+      }
+
+      function simCasc(gust) {
+        const n = Math.round(T_END / DT);
+        const nd = Math.round(L / DT);
+        const ub = new Float64Array(nd);
+        let head = 0, m = 0, r = 0, th = 0, thf = 0, intR = 0;
+        const step = Math.round(0.002 / DT);
+        const ts = [], ys = [];
+        let peak = 0, lastOut = 0;
+        for (let i = 0; i < n; i++) {
+          const t = i * DT;
+          thf += (th - thf) / TAU_TH * DT;
+          const eR = (W_IN / 3) * (0 - thf) - r;      // gyro: direct rate / ジャイロ直結
+          intR += eR * DT;
+          const u = KP_R * (eR + intR / 0.7);
+          const ue = ub[head]; ub[head] = u; head = (head + 1) % nd;
+          m += (ue - m) / TAU * DT;
+          const acc = K * m + ((t >= G0 && t < G1) ? gust : 0);
+          r += acc * DT; th += r * DT;
+          const a = Math.abs(th);
+          if (a > peak) peak = a;
+          if (t >= G1 && a * DEG > 1.0) lastOut = i;
+          if (i % step === 0) { ts.push(t); ys.push(th * DEG); }
+        }
+        return { ts, ys, peak: peak * DEG, rec: Math.max(0, (lastOut + 1) * DT - G1) };
+      }
+
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const gust = Number($('gustAmp').value);
+        $('gustAmpVal').textContent = gust;
+        const same = $('gustSameGain').checked;
+        const sg = same ? simSingle(KP_R, W_IN / 3, gust) : simSingle(0.225, 3.0, gust);
+        const cs = simCasc(gust);
+        const yMax = Math.max(8, Math.ceil(Math.max(sg.diverged ? 20 : sg.peak, cs.peak) * 1.25));
+        const yMin = -yMax / 3;
+        const x0 = 70, w = 660, h = 250;
+        // gust window shading / 突風区間の網掛け
+        const gx0 = x0 + (G0 / T_END) * w, gx1 = x0 + (G1 / T_END) * w;
+        ctx.fillStyle = 'rgba(128,128,128,0.12)';
+        ctx.fillRect(gx0, 26, gx1 - gx0, h);
+        drawAxes(ctx, x0, 26, w, h, String(yMin), String(yMax), '角度 [deg]');
+        const y0line = 26 + h * (yMax / (yMax - yMin));
+        ctx.strokeStyle = c.border; ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        ctx.setLineDash([]);
+        plotXY(ctx, sg.ts, sg.ys, x0, 26, w, h, 0, T_END, yMin, yMax, '#c2373b', false, 2.4);
+        plotXY(ctx, cs.ts, cs.ys, x0, 26, w, h, 0, T_END, yMin, yMax, c.accent, false, 2.4);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#c2373b'; ctx.fillText('1段PID（レート＝角度の微分）', x0 + 8, 22);
+        ctx.fillStyle = c.accent; ctx.fillText('カスケード（レート＝ジャイロ直結）', x0 + 240, 22);
+        ctx.fillStyle = c.muted; ctx.fillText('突風', gx0 + 4, 40);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
+
+        $('gustReadout').textContent = sg.diverged
+          ? `1段PID: 発散！（カスケード用ゲインは遅れたレート推定では支えられない） | カスケード: 最大 ${cs.peak.toFixed(1)}° / 復帰 ${cs.rec.toFixed(2)} s`
+          : `1段PID: 最大 ${sg.peak.toFixed(1)}° / 1°内復帰 ${sg.rec.toFixed(2)} s | カスケード: 最大 ${cs.peak.toFixed(1)}° / 復帰 ${cs.rec.toFixed(2)} s`;
+      }
+
+      $('gustAmp').addEventListener('input', redraw);
+      $('gustSameGain').addEventListener('change', redraw);
+      redraw();
+    })();
+  })();
+  </script>
+</body>
+</html>
