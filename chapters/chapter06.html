@@ -113,7 +113,7 @@
     </div>
 
     <p class="src">
-      条件: 目標 +300 rad/s のステップ（t=0.2s）、負荷外乱（t=1.5s、Duty −0.05 相当）。
+      条件: 目標 +300 rad/s のステップ（t=0.05s）、負荷外乱（t=0.45s、Duty −0.05 相当）。
       制御は 6.1 の並列形 PID をそのまま実装（微分は教科書どおりの理想微分・偏差入力）。
       飽和なし・ノイズなし。
     </p>
@@ -173,6 +173,14 @@
     <div class="sim-panel">
       <canvas id="incompCanvas" width="760" height="430"></canvas>
       <div class="sim-opts">
+        <label>\(K_p\):
+          <input type="range" id="ibKp" min="2" max="30" value="10">
+          <span id="ibKpVal"></span>
+        </label>
+        <label>\(K_i\):
+          <input type="range" id="ibKi" min="0" max="60" value="20">
+          <span id="ibKiVal"></span>
+        </label>
         <label>\(K_d\):
           <input type="range" id="ibKd" min="0" max="40" value="20">
           <span id="ibKdVal"></span>
@@ -187,8 +195,8 @@
     </div>
 
     <p class="src">
-      条件: 6.2 と同じ実験（目標 +300 rad/s・負荷外乱つき）。P・I は固定
-      （\(K_p=10^{-3}, K_i=0.2\)）、微分は不完全微分・偏差入力。
+      条件: 6.2 と同じ実験（目標 +300 rad/s・負荷外乱つき）。
+      微分だけが不完全微分（偏差入力）に変わった。
       上段=回転数、下段=制御入力（Duty）。
     </p>
 
@@ -240,7 +248,7 @@
       <li><strong>制御入力（下段）は別世界</strong>: 偏差に掛けた D は目標ステップの瞬間に
         \(K_p \Delta r/\eta = 2.4\) Duty のトゲを立てます（毎回！）。
         測定値に掛けた D にはトゲがありません。</li>
-      <li><strong>外乱（t=1.5s）への応答は、D あり2本で完全に一致</strong>——
+      <li><strong>外乱（t=0.45s）への応答は、D あり2本で完全に一致</strong>——
         「閉ループの極は同じ、違いは目標値側の零点だけ」の実証です。</li>
       <li>偏差D の目標応答が一番きれいに見えますが、それは 2.7 Duty のトゲで
         買った「先払いのブレーキ」です。実機ではモータ全開の 5 倍——
@@ -333,24 +341,129 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
 
     <ul>
       <li><strong>条件付き積分なし</strong> → 出力が飽和に張り付いている間に積分が育ち、
-        目標を 15% も超えてから、育った積分を吐き出しながらゆっくり戻ります。
+        目標を 15% も超えてから戻ります。
         飽和がなければオーバーシュートしないはずの設計なのに、です。</li>
       <li><strong>条件付き積分あり</strong> → 飽和中は積分が止まり、
         オーバーシュートが消えます。制御入力が飽和から離れる瞬間の違いに注目。</li>
     </ul>
 
-    <h2>6.6 実機の実装を読む</h2>
+    <h2>6.6 実機の実装を読む — 時定数形、そして PI-D</h2>
     <p>
-      これで実機のコードが全部読めるようになりました。StampFly の PID
-      （firmware/vehicle の pid.hpp、1軸あたり約80行）の設計はこうです:
+      仕上げに、実機 StampFly の PID を読みます。ゲインは 6.1 で出てきた
+      <strong>時定数形</strong>（\(K_p, T_i, T_d\)）です。まず、時定数形＋不完全微分を
+      「1本の制御器を誤差に掛ける」形で書くと:
+    </p>
+    <div class="math-scroll">
+    $$C(s) = K_p\left(1 + \frac{1}{T_i s} + \frac{T_d s}{\eta T_d s + 1}\right),
+      \qquad u = C(s)\,e$$
+    </div>
+    <p>
+      この式の<strong>まま</strong>、モータで運転してみましょう。ツマミが
+      \(K_i, K_d\) から \(T_i, T_d\) に変わると操作感がどう変わるか——
+      6.2〜6.3 の並列形と比べて味わってください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="tcCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>\(K_p\):
+          <input type="range" id="tcKp" min="2" max="30" value="10">
+          <span id="tcKpVal"></span>
+        </label>
+        <label>\(T_i\) [s]:
+          <input type="range" id="tcTi" min="5" max="200" value="50">
+          <span id="tcTiVal"></span>
+        </label>
+        <label>\(T_d\) [ms]:
+          <input type="range" id="tcTd" min="0" max="20" value="0">
+          <span id="tcTdVal"></span>
+        </label>
+      </div>
+      <div class="sim-readout" id="tcReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 6.2 と同じ実験（目標 +300 rad/s・負荷外乱つき）。時定数形・誤差入力・
+      不完全微分（η=0.125 固定）。読み出しに並列形への換算を表示。
+    </p>
+
+    <ul>
+      <li>\(T_i\) は<strong>分母</strong>にいます: 小さくするほど I が強い——
+        並列形の \(K_i\) とは逆向きの感覚です。</li>
+      <li>\(K_p\) を動かすと P・I・D が<strong>丸ごとスケール</strong>します。
+        「応答の形を保ったまま、強さだけを変える」ツマミになる——
+        これが時定数形が現場で好まれる理由のひとつです。</li>
+    </ul>
+
+    <p>
+      ただし——<strong>実機の実装は上の式ではありません</strong>。6.4 で学んだとおり、
+      D は誤差ではなく測定値に掛けるのが実機の流儀です。StampFly の実装を
+      式に忠実に書くと:
+    </p>
+    <div class="math-scroll">
+    $$u = K_p\,e + \frac{K_p}{T_i s}\,e - K_p\,\frac{T_d s}{\eta T_d s + 1}\,y$$
+    </div>
+    <p>
+      目標値と測定値で通り道が違うため、もう「1本の \(C(s)\) を誤差に掛ける」形には
+      書けません（<strong>2自由度制御</strong>と呼ばれる構造の一種です）。
+    </p>
+    <p>
+      最後のシミュレーションは、この式に<strong>実機の飛行実績ゲインを初期値</strong>として
+      入れた、本物のロールレートループです（プラントは第4・5章の同定値そのまま:
+      \(I_{xx}=9.16\times10^{-6}\ \mathrm{kg\,m^2}\)、モータ遅れ 20 ms、むだ時間 12 ms）。
+      実機の値の前後にスライドして、この設計が崖からどのくらいの距離に
+      立っているかを確かめてください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="rlCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>\(K_p\) [N·m/(rad/s)]:
+          <input type="range" id="rlKp" min="20" max="300" value="98">
+          <span id="rlKpVal"></span>
+        </label>
+        <label>\(T_i\) [s]:
+          <input type="range" id="rlTi" min="1" max="20" value="7">
+          <span id="rlTiVal"></span>
+        </label>
+        <label>\(T_d\) [ms]:
+          <input type="range" id="rlTd" min="0" max="30" value="10">
+          <span id="rlTdVal"></span>
+        </label>
+      </div>
+      <div class="sim-readout" id="rlReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: ロールレート指令 +3 rad/s のステップ（t=0.05s）＋トルク外乱（t=0.45s、
+      \(10^{-4}\) N·m）。初期値は実機の飛行実績ゲイン
+      \(K_p=9.8\times10^{-4},\ T_i=0.7,\ T_d=0.010\)（η=0.125）。
+      上段=ロールレート、下段=トルク指令。
+    </p>
+
+    <ul>
+      <li><strong>実機値は攻めた設計</strong>: 生のステップには6割ほど行き過ぎます。
+        実機ではレート指令がスティックや外側ループでなまされて届くので
+        これで良く、外乱への強さ（すぐ戻る）を優先した置き方です。</li>
+      <li><strong>\(T_d\) を 0 へ</strong> → 大振動。実機の D は飾りではなく、
+        むだ時間 12 ms で失われた位相を取り戻してループを支えています。
+        第5章で「カスケードの内側ループは構造の D」と言いましたが、
+        その内側ループ自身も D に支えられているのです。</li>
+      <li><strong>\(K_p\) を2倍</strong> → 発振・発散。実機値は崖から
+        適度な距離に置かれています（この「距離」を定量的に測る道具が
+        次章の位相余裕です）。</li>
+    </ul>
+
+    <p>
+      最後に pid.hpp（1軸あたり約80行）の設計をまとめます:
     </p>
     <ul>
-      <li>形は時定数形＋不完全微分:
-        \(C(s) = K_p\left(1 + \dfrac{1}{T_i s} + \dfrac{T_d s}{\eta T_d s + 1}\right)\)、
-        \(\eta = 0.125\)（ゲイン上限 = \(K_p\) の8倍）</li>
+      <li>ゲインは時定数形（\(K_p, T_i, T_d\)、\(\eta=0.125\)＝ゲイン上限 \(K_p\) の8倍）。
+        ただし1本の \(C(s)\) ではなく、上の式のとおり
+        <strong>P・I は誤差、D は測定値</strong>の PI-D（2自由度）</li>
       <li>離散化は<strong>全項 Tustin</strong>（400 Hz）。積分は台形則、微分は双一次変換の漸化式</li>
-      <li><strong>P は偏差、D は測定値</strong>（PI-D）。リセット直後の1周期は微分の
-        前回値を仕込むだけ——いきなり微分すると初期値からのキックが出るため</li>
+      <li>リセット直後の1周期は微分の前回値を仕込むだけ——いきなり微分すると
+        初期値からのキックが出るため</li>
       <li>アンチワインドアップは<strong>条件付き積分</strong>＋保険のクランプ。
         コード中のコメントに「クランプだけではアンチワインドアップにならない」と明記</li>
       <li>出力制限は段ごとの物理量で: レートループはトルク上限、角度ループは
@@ -450,8 +563,8 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
     function simulate(o) {
       const opt = Object.assign({
         kp: 1e-3, ki: 0, kd: 0, dMode: 'meas', tauF: 0.002,
-        ref: 300, tRef: 0.2, dU: 0, tDist: 1e9,
-        sat: 0, aw: false, noise: 0, tEnd: 2.5, sample: 0.002,
+        ref: 300, tRef: 0.05, dU: 0, tDist: 1e9,
+        sat: 0, aw: false, noise: 0, tEnd: 0.8, sample: 0.002,
         dt: DT,   // D併用時は細かい刻みが要る（強いレート帰還は速い極を作る）
       }, o);
       const dt = opt.dt;
@@ -497,7 +610,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
                    os: Infinity, e145: NaN, eEnd: NaN, satTime: satSteps * dt };
         }
         if (t > opt.tRef && y > peak) peak = y;
-        if (e145 === null && t >= 1.45) e145 = r - y;
+        if (e145 === null && t >= opt.tDist - 0.02) e145 = r - y;
         eEnd = r - y;
         if (i % step === 0) { ts.push(t); ysArr.push(y); usArr.push(u); }
       }
@@ -520,18 +633,18 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         $('rKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
         // 教科書のままの理想微分（偏差入力）: τf=dt でフィルタなしの生の差分になる
         // textbook ideal derivative on the error (tauF=dt -> raw difference)
-        const res = simulate({ kp, ki, kd, dMode: 'err', tauF: DT, ref: 300, dU: -0.05, tDist: 1.5 });
-        const x0 = 70, w = 660, h = 250, yMax = 450, tMax = 2.5;
+        const res = simulate({ kp, ki, kd, dMode: 'err', tauF: DT, ref: 300, dU: -0.05, tDist: 0.45 });
+        const x0 = 70, w = 660, h = 250, yMax = 450, tMax = 0.8;
         drawAxes(ctx, x0, 26, w, h, '0', String(yMax), '回転数変化 [rad/s]');
         // reference line / 目標線
         const yr = 26 + h * ((yMax - 300) / yMax);
         ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
-        ctx.beginPath(); ctx.moveTo(x0 + (0.2 / tMax) * w, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x0 + (0.05 / tMax) * w, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('目標 300', x0 + w - 60, yr - 6);
         // disturbance marker / 外乱マーカー
-        const xd = x0 + (1.5 / tMax) * w;
+        const xd = x0 + (0.45 / tMax) * w;
         ctx.strokeStyle = c.border; ctx.setLineDash([3, 3]);
         ctx.beginPath(); ctx.moveTo(xd, 26); ctx.lineTo(xd, 26 + h); ctx.stroke();
         ctx.setLineDash([]);
@@ -555,7 +668,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
       const cv = $('incompCanvas'), ctx = cv.getContext('2d');
       function drawUV(res, uMaxDyn) {
         const c = themeColors();
-        const x0 = 70, w = 660, tMax = 2.5;
+        const x0 = 70, w = 660, tMax = 0.8;
         const hT = 210, yMax = 450;
         drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
         const yr = 24 + hT * ((yMax - 300) / yMax);
@@ -576,19 +689,22 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
       }
       function redraw() {
         ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = Number($('ibKp').value) * 1e-4;
+        const ki = Number($('ibKi').value) * 1e-2;
         const kd = Number($('ibKd').value) * 3e-7;         // 0〜1.2e-5
         const eta = Number($('ibEta').value) / 100;
+        $('ibKpVal').textContent = kp.toExponential(1);
+        $('ibKiVal').textContent = ki.toFixed(2);
         $('ibKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
         $('ibEtaVal').textContent = eta.toFixed(2);
-        const kp = 1e-3, ki = 0.2;
         const tauF = Math.max(eta * (kd / kp), 2 * DT);
         const noise = $('ibNoise').checked ? 3 : 0;
-        const res = simulate({ kp, ki, kd, dMode: 'err', tauF, noise, ref: 300, dU: -0.05, tDist: 1.5 });
+        const res = simulate({ kp, ki, kd, dMode: 'err', tauF, noise, ref: 300, dU: -0.05, tDist: 0.45 });
         const uPk = Math.max(...res.us.map(Math.abs));
         const uMaxDyn = Math.max(0.5, Math.ceil(uPk * 1.2 * 10) / 10);
         drawUV(res, uMaxDyn);
         // 制御入力の毛羽立ち（外乱後の定常区間の標準偏差）/ steady-tail u std
-        const tail = res.us.filter((_, i) => res.ts[i] > 2.0);
+        const tail = res.us.filter((_, i) => res.ts[i] > 0.65);
         const m = tail.reduce((a, b) => a + b, 0) / tail.length;
         const std = Math.sqrt(tail.reduce((a, b) => a + (b - m) ** 2, 0) / tail.length);
         $('incompReadout').textContent =
@@ -596,7 +712,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           `入力の毛羽立ち σ=${std.toExponential(1)} Duty（上限 Kp/η=${(kp / eta).toExponential(1)}） | ` +
           `ステップ瞬間の入力ピーク ${uPk.toFixed(2)} Duty ← このトゲが次節の主役`;
       }
-      ['ibKd', 'ibEta'].forEach(id => $(id).addEventListener('input', redraw));
+      ['ibKp', 'ibKi', 'ibKd', 'ibEta'].forEach(id => $(id).addEventListener('input', redraw));
       $('ibNoise').addEventListener('change', redraw);
       redraw();
     })();
@@ -609,11 +725,11 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.clearRect(0, 0, cv.width, cv.height);
         const kp = 1e-3, ki = 0.2, kd = 6e-6, eta = 0.125;
         const tauF = eta * (kd / kp);
-        const base = { kp, ki, ref: 300, dU: -0.05, tDist: 1.5 };
+        const base = { kp, ki, ref: 300, dU: -0.05, tDist: 0.45 };
         const rNone = simulate(Object.assign({}, base));
         const rErr  = simulate(Object.assign({ kd, dMode: 'err',  tauF }, base));
         const rMeas = simulate(Object.assign({ kd, dMode: 'meas', tauF }, base));
-        const x0 = 70, w = 660, tMax = 2.5;
+        const x0 = 70, w = 660, tMax = 0.8;
         const hT = 210, yMax = 450;
         drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
         const yr = 24 + hT * ((yMax - 300) / yMax);
@@ -651,9 +767,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
       function redraw() {
         const c = themeColors();
         ctx.clearRect(0, 0, cv.width, cv.height);
-        const o = { kp: 1e-3, ki: 0.05, sat: 0.5, aw: $('wAw').checked, ref: 1800, tEnd: 2.0 };
+        const o = { kp: 1e-3, ki: 0.05, sat: 0.5, aw: $('wAw').checked, ref: 1800, tEnd: 1.2 };
         const res = simulate(o);
-        const x0 = 70, w = 660, tMax = 2.0, yMax = 2400;
+        const x0 = 70, w = 660, tMax = 1.2, yMax = 2400;
         const hT = 210;
         drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
         const yr = 24 + hT * ((yMax - o.ref) / yMax);
@@ -684,6 +800,125 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           (o.aw ? '条件付き積分: ON（飽和中は積分停止）' : '条件付き積分: OFF（積分は飽和中も育つ）');
       }
       $('wAw').addEventListener('change', redraw);
+      redraw();
+    })();
+
+    // ---------- 6.6a time-constant form / 時定数形の操作感 ----------
+    (function () {
+      const cv = $('tcCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = Number($('tcKp').value) * 1e-4;
+        const ti = Number($('tcTi').value) * 1e-2;         // 0.05〜2.0 s
+        const td = Number($('tcTd').value) * 1e-3;         // 0〜20 ms
+        $('tcKpVal').textContent = kp.toExponential(1);
+        $('tcTiVal').textContent = ti.toFixed(2);
+        $('tcTdVal').textContent = (td * 1e3).toFixed(0);
+        // 時定数形 → 並列形換算: Ki=Kp/Ti, Kd=Kp·Td / convert to parallel gains
+        const ki = kp / ti, kd = kp * td;
+        const tauF = Math.max(0.125 * td, 2 * DT);
+        const res = simulate({ kp, ki, kd, dMode: 'err', tauF, ref: 300, dU: -0.05, tDist: 0.45 });
+        const x0 = 70, w = 660, tMax = 0.8, hT = 210, yMax = 450;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
+        const yr = 24 + hT * ((yMax - 300) / yMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('目標 300', x0 + w - 64, yr - 6);
+        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, 0, yMax, c.accent, 2.2);
+        const uPk = Math.max(0.4, Math.ceil(Math.max(...res.us.map(Math.abs)) * 1.2 * 10) / 10);
+        const yB = 262, hB = 130;
+        drawAxes(ctx, x0, yB, w, hB, String(-uPk), String(uPk), '入力 [Duty]');
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -uPk, uPk, '#2e8b57', 1.6);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        $('tcReadout').textContent =
+          `並列形換算: Ki = Kp/Ti = ${ki.toExponential(2)}, Kd = Kp·Td = ${kd.toExponential(2)} | ` +
+          `オーバーシュート ${res.os.toFixed(1)} % | 最終誤差 ${res.eEnd.toFixed(1)} rad/s`;
+      }
+      ['tcKp', 'tcTi', 'tcTd'].forEach(id => $(id).addEventListener('input', redraw));
+      redraw();
+    })();
+
+    // ---------- 6.6b real roll-rate loop / 実機ロールレートループ ----------
+    (function () {
+      const cv = $('rlCanvas'), ctx = cv.getContext('2d');
+      // identified plant / 同定済みプラント: torque -> rate = 1/(Ixx s(τm s+1)), dead time L
+      const IXX = 9.16e-6, TAUM = 0.02, L = 0.012, ETA = 0.125;
+      function simRate(kp, ti, td) {
+        const tEnd = 0.8, n = Math.round(tEnd / DT), nd = Math.round(L / DT);
+        const ub = new Float64Array(nd);
+        let head = 0, m = 0, r = 0, integ = 0, dState = 0, prevY = null;
+        const tauF = Math.max(ETA * td, 2 * DT);
+        const step = Math.round(0.002 / DT);
+        const ts = [], ys = [], us = [];
+        let peak = 0, blown = false, eEnd = 0;
+        for (let i = 0; i < n; i++) {
+          const t = i * DT, ref = t >= 0.05 ? 3 : 0, e = ref - r;
+          let dTerm = 0;
+          if (td > 0) {
+            if (prevY === null) prevY = r;
+            dState += ((r - prevY) / DT - dState) * (DT / tauF);
+            prevY = r;
+            dTerm = -kp * td * dState;                 // D on measurement / 測定値微分
+          }
+          integ += (kp / ti) * e * DT;
+          const u = kp * e + integ + dTerm;
+          const ue = ub[head]; ub[head] = u; head = (head + 1) % nd;
+          m += (ue - m) / TAUM * DT;                   // motor lag on produced torque
+          const dist = t >= 0.45 ? 1e-4 : 0;           // trim torque disturbance
+          r += ((m + dist) / IXX) * DT;
+          if (!isFinite(r) || Math.abs(r) > 1e4) { blown = true; break; }
+          if (t > 0.05 && r > peak) peak = r;
+          eEnd = ref - r;
+          if (i % step === 0) { ts.push(t); ys.push(r); us.push(u); }
+        }
+        return { ts, ys, us, blown, os: Math.max(0, (peak / 3 - 1) * 100), eEnd };
+      }
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = Number($('rlKp').value) * 1e-5;         // 2e-4〜3e-3
+        const ti = Number($('rlTi').value) * 0.1;          // 0.1〜2.0 s
+        const td = Number($('rlTd').value) * 1e-3;         // 0〜30 ms
+        $('rlKpVal').textContent = kp.toExponential(2);
+        $('rlTiVal').textContent = ti.toFixed(1);
+        $('rlTdVal').textContent = (td * 1e3).toFixed(0);
+        const res = simRate(kp, ti, td);
+        const x0 = 70, w = 660, tMax = 0.8, hT = 210;
+        const yPk = Math.max(...res.ys.map(Math.abs), 4);
+        const yMax = Math.min(40, Math.ceil(yPk * 1.15));
+        const yMin = -Math.ceil(yMax / 3);
+        drawAxes(ctx, x0, 24, w, hT, String(yMin), String(yMax), 'ロールレート [rad/s]');
+        const yr = 24 + hT * ((yMax - 3) / (yMax - yMin));
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('目標 3', x0 + w - 50, yr - 6);
+        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, yMin, yMax, c.accent, 2.2);
+        const uMn = Math.max(...res.us.map(v => Math.abs(v * 1e3)), 3);
+        const uSc = Math.min(30, Math.ceil(uMn * 1.2));
+        const yB = 262, hB = 130;
+        drawAxes(ctx, x0, yB, w, hB, String(-uSc), String(uSc), 'トルク [mN·m]');
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us.map(v => v * 1e3), x0, yB, w, hB, tMax, -uSc, uSc, '#2e8b57', 1.6);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        $('rlReadout').textContent = res.blown
+          ? '発散！ 実機値からどれだけ動かしたか振り返ってみてください'
+          : `オーバーシュート ${res.os.toFixed(1)} % | 最終誤差 ${res.eEnd.toFixed(2)} rad/s` +
+            (Math.abs(kp - 9.8e-4) < 1e-5 && Math.abs(ti - 0.7) < 0.01 && Math.abs(td - 0.01) < 5e-4
+              ? ' | ← 実機の飛行実績ゲイン' : '');
+      }
+      ['rlKp', 'rlTi', 'rlTd'].forEach(id => $(id).addEventListener('input', redraw));
       redraw();
     })();
   })();
