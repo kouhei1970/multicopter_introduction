@@ -172,8 +172,9 @@
       （ソースコード pid.hpp で確認済み）。
     </p>
     <p>
-      ここまでの進化——教科書のまま → 不完全微分 → PI-D——を、
-      1つの画面で正直に並べてみます。
+      ここまでの進化——教科書のままの PID → 不完全微分 → PI-D——を、
+      1つの画面で正直に並べてみます。開いた直後に見えるのは、
+      教科書の式をそのまま実装した PID の姿です。
     </p>
 
     <div class="sim-panel">
@@ -181,10 +182,10 @@
       <div class="sim-opts">
         <label>微分の実装:
           <select id="evoKind">
-            <option value="none" selected>D なし（PI）</option>
-            <option value="ideal-err">① 教科書のまま（理想微分・偏差）</option>
+            <option value="ideal-err" selected>① 教科書のままの PID（理想微分・偏差）</option>
             <option value="filt-err">② 不完全微分（偏差）</option>
             <option value="filt-meas">③ 不完全微分・測定値（PI-D）</option>
+            <option value="none">比較用: D なし（PI）</option>
           </select>
         </label>
       </div>
@@ -213,7 +214,8 @@
     </ul>
 
     <p>
-      ところで、③ の回転数をよく見ると D なしよりわずかに行き過ぎています。
+      ところで、③ の回転数を比較用の「D なし（PI）」と見比べると、
+      わずかに行き過ぎています。
       6.5 節の教材でこのモータに D（測定値側）を入れてみると——教科書の期待に反して
       <strong>応答は悪化します</strong>。一次遅れのプラントでは、回転数の変化に
       逆らう D は「重り」として働き、プラントを見かけ上遅くするだけだからです
