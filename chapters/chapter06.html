@@ -172,8 +172,49 @@
       （ソースコード pid.hpp で確認済み）。
     </p>
     <p>
-      これで D を安全に試せる形が揃いました。ところが、6.5 節の教材で
-      このモータに D（測定値側）を入れてみると——教科書の期待に反して
+      ここまでの進化——教科書のまま → 不完全微分 → PI-D——を、
+      1つの画面で正直に並べてみます。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="evoCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>微分の実装:
+          <select id="evoKind">
+            <option value="none" selected>D なし（PI）</option>
+            <option value="ideal-err">① 教科書のまま（理想微分・偏差）</option>
+            <option value="filt-err">② 不完全微分（偏差）</option>
+            <option value="filt-meas">③ 不完全微分・測定値（PI-D）</option>
+          </select>
+        </label>
+      </div>
+      <div class="sim-readout" id="evoReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 6.2 と同じモータ、目標 +200 rad/s のステップ。\(K_p=10^{-3},\ K_i=0.05,\
+      K_d=10^{-5}\)（\(T_d\)=10ms）、\(\eta=0.125\)、制御周期 0.1 ms、
+      Duty 飽和 ±0.5（実機と同じく出力には限りがある）。
+      上段=回転数、下段=制御入力。
+    </p>
+
+    <ul>
+      <li><strong>① 教科書のまま</strong> → <strong>暴走します</strong>。目標ステップの瞬間に
+        微分項が全開の数十倍を要求し、以後は出力が +全開↔−全開を毎周期往復する
+        チャタリング（高速なバタつき）に陥って戻ってきません。キックだけの問題では
+        ないのです——理想微分はゲインが高周波で頭打ちにならないため、
+        制御周期1回分の遅れすら許容できず、<strong>ループごと不安定</strong>になります。</li>
+      <li><strong>② 不完全微分</strong> → 安定します（フィルタがゲインを \(K_p/\eta\) で
+        打ち止めにするから）。ただしステップの瞬間、微分項は 1.6 Duty＝
+        <strong>全開の3倍超</strong>を一瞬要求します（飽和でクリップ）。
+        スティック由来の階段状指令では、これが毎回モータを蹴ります。</li>
+      <li><strong>③ PI-D</strong> → キックが消え、制御入力はなめらかになります。
+        これで「実機に載せられる微分」の完成です。</li>
+    </ul>
+
+    <p>
+      ところで、③ の回転数をよく見ると D なしよりわずかに行き過ぎています。
+      6.5 節の教材でこのモータに D（測定値側）を入れてみると——教科書の期待に反して
       <strong>応答は悪化します</strong>。一次遅れのプラントでは、回転数の変化に
       逆らう D は「重り」として働き、プラントを見かけ上遅くするだけだからです
       （実効時定数が \(\tau + K_m K_d\) に伸びる）。遅くなったプラントを
@@ -482,6 +523,93 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
       }
       ['rKp', 'rKi'].forEach(id => $(id).addEventListener('input', redraw));
+      redraw();
+    })();
+
+    // ---------- 6.4 derivative evolution lab / 微分の進化ラボ ----------
+    (function () {
+      const cv = $('evoCanvas'), ctx = cv.getContext('2d');
+      // plant integrated at 1e-5 s, controller ZOH at 1e-4 s (10 kHz)
+      // プラントは1e-5刻み・制御器は0.1ms周期のZOH（理想微分の不安定は物理・数値でない）
+      const DTP = 1e-5, TS = 1e-4, SPC = 10, SAT = 0.5;
+      const KP2 = 1e-3, KI2 = 0.05, KD2 = 1e-5, ETA2 = 0.125;
+      const TAUF2 = ETA2 * (KD2 / KP2);
+      function simEvo(kind) {
+        const tEnd = 1.2, n = Math.round(tEnd / DTP);
+        let y = 0, integ = 0, dState = 0, prevIn = null, u = 0;
+        let dPeak = 0, yPk = 0, yMn = 0, flips = 0, prevU = 0, peakAfter = 0;
+        const step = Math.round(0.002 / DTP);
+        const ts = [], ys = [], us = [];
+        for (let i = 0; i < n; i++) {
+          const t = i * DTP, r = t >= 0.2 ? 200 : 0;
+          if (i % SPC === 0) {
+            const e = r - y;
+            const dIn = kind === 'filt-meas' ? -y : e;
+            if (prevIn === null) prevIn = dIn;
+            let dTerm = 0;
+            if (kind === 'ideal-err') dTerm = KD2 * (dIn - prevIn) / TS;
+            else if (kind !== 'none') { dState += ((dIn - prevIn) / TS - dState) * (TS / TAUF2); dTerm = KD2 * dState; }
+            prevIn = dIn;
+            integ += KI2 * e * TS;
+            u = Math.max(-SAT, Math.min(SAT, KP2 * e + integ + dTerm));
+            dPeak = Math.max(dPeak, Math.abs(dTerm));
+            if (t > 0.25 && Math.sign(u) !== Math.sign(prevU) && Math.abs(u) > 0.4) flips++;
+            prevU = u;
+          }
+          y += ((KM * u - y) / TAU) * DTP;
+          yPk = Math.max(yPk, y); yMn = Math.min(yMn, y);
+          if (t > 0.2) peakAfter = Math.max(peakAfter, y);
+          if (i % step === 0) { ts.push(t); ys.push(y); us.push(u); }
+        }
+        return { ts, ys, us, dPeak, yPk, yMn, flips,
+                 os: Math.max(0, (peakAfter / 200 - 1) * 100), settled: Math.abs(y - 200) < 4 };
+      }
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kind = $('evoKind').value;
+        const res = simEvo(kind);
+        const x0 = 70, w = 660, tMax = 1.2;
+        const yMax = Math.max(300, Math.ceil(res.yPk * 1.1 / 100) * 100);
+        const yMin = Math.min(0, Math.floor(res.yMn * 1.1 / 100) * 100);
+        const hT = 210;
+        drawAxes(ctx, x0, 24, w, hT, String(yMin), String(yMax), '回転数 [rad/s]');
+        const yr = 24 + hT * ((yMax - 200) / (yMax - yMin));
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('目標 200', x0 + w - 64, yr - 6);
+        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, yMin, yMax, c.accent, 2.2);
+        const yB = 262, hB = 130;
+        drawAxes(ctx, x0, yB, w, hB, '-0.6', '0.6', '入力 [Duty]');
+        [0.5, -0.5].forEach(v => {
+          const yy = yB + hB * ((0.6 - v) / 1.2);
+          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+        });
+        ctx.fillStyle = '#c2373b'; ctx.textAlign = 'left';
+        ctx.fillText('飽和 ±0.5', x0 + 6, yB + 12);
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -0.6, 0.6, '#2e8b57', 1.6);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        let msg;
+        if (kind === 'ideal-err') {
+          msg = `暴走！ 微分項の要求ピーク ${res.dPeak.toFixed(0)} Duty（全開の${(res.dPeak / SAT).toFixed(0)}倍）` +
+                ` | 出力のレール間反転 ${res.flips} 回（チャタリング） | 整定せず`;
+        } else if (kind === 'filt-err') {
+          msg = `微分項の要求ピーク ${res.dPeak.toFixed(2)} Duty（全開の${(res.dPeak / SAT).toFixed(1)}倍・クリップ）` +
+                ` | オーバーシュート ${res.os.toFixed(1)} %`;
+        } else if (kind === 'filt-meas') {
+          msg = `微分項の要求ピーク ${res.dPeak.toFixed(2)} Duty（キックなし）` +
+                ` | オーバーシュート ${res.os.toFixed(1)} %`;
+        } else {
+          msg = `PI のみ | オーバーシュート ${res.os.toFixed(1)} %`;
+        }
+        $('evoReadout').textContent = msg;
+      }
+      $('evoKind').addEventListener('change', redraw);
       redraw();
     })();
 
