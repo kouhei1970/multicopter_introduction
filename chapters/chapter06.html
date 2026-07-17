@@ -87,8 +87,10 @@
     </div>
     <p>
       「回転数を 300 rad/s 上げろ」というステップ指令と、途中で入る負荷外乱
-      （プロペラが傷ついて負荷が増えた想定）に対して、まず P と I を効かせてみてください
-      （D の実験は 6.4 節で形を学んでから）。
+      （プロペラが傷ついて負荷が増えた想定）に対して、6.1 の並列形 PID を
+      <strong>そのまま</strong>実装しました。P・I・D すべて自由に触れます。
+      まず P と I で応答を整えて、それから <strong>\(K_d\) を 0 から少しずつ
+      上げてみてください</strong>——何が起きるでしょうか。
     </p>
 
     <div class="sim-panel">
@@ -102,13 +104,18 @@
           <input type="range" id="rKi" min="0" max="60" value="0">
           <span id="rKiVal"></span>
         </label>
+        <label>\(K_d\):
+          <input type="range" id="rKd" min="0" max="20" value="0">
+          <span id="rKdVal"></span>
+        </label>
       </div>
       <div class="sim-readout" id="rolesReadout"></div>
     </div>
 
     <p class="src">
       条件: 目標 +300 rad/s のステップ（t=0.2s）、負荷外乱（t=1.5s、Duty −0.05 相当）。
-      制御は並列形の PI。飽和なし・ノイズなし。
+      制御は 6.1 の並列形 PID をそのまま実装（微分は教科書どおりの理想微分・偏差入力）。
+      飽和なし・ノイズなし。
     </p>
 
     <p>やってみると、教科書の1行ずつが体感になります:</p>
@@ -121,13 +128,20 @@
         最終的に勝ちます。</li>
       <li><strong>I を欲張る</strong> → 振動が始まります。過去の蓄積は急には
         止まれないからです（\(K_i\) を上げて確かめてください）。</li>
+      <li><strong>D を足す</strong> → 少し上げると行き過ぎがわずかに減って、
+        「未来に先回りするブレーキ」の顔が見えます。ところが、
+        もう少し上げると——<strong>突然暴走します</strong>。
+        教科書の式のどこにも嘘はないのに、です。
+        この暴走の種明かしが、ここから始まる「実機の階段」です。</li>
     </ul>
 
     <h2>6.3 理想微分は使えない — 不完全微分と η の意味</h2>
     <p>
-      ここからが「実機の階段」です。まず微分。理想微分 \(D(s) = K_d\,s\) のゲインは
-      周波数に比例して<strong>無限に増えます</strong>。センサの測定値には必ず高周波ノイズが
-      乗っているので、理想微分は「ノイズ専用の増幅器」になってしまいます。
+      6.2 の暴走の犯人は、理想微分 \(D(s) = K_d\,s\) のゲインが周波数に比例して
+      <strong>無限に増える</strong>ことです。ゲインが高い周波数で頭打ちにならないため、
+      制御周期1回分のわずかな遅れさえ許容できず、ある \(K_d\) を超えると
+      ループごと不安定になります。仮に安定でも、センサの測定値には必ず高周波ノイズが
+      乗っているので、理想微分は「ノイズ専用の増幅器」として暴れます。
       そこで一次遅れフィルタを抱き合わせた<strong>不完全微分</strong>を使います:
     </p>
     <div class="math-scroll">
@@ -147,9 +161,44 @@
       \(\eta\) を小さくするほど微分は理想に近づき鋭くなりますが、ノイズの増幅上限も
       \(1/\eta\) 倍に上がります。微分が「微分として」働く帯域は
       \(1/T_d\) から \(1/(\eta T_d)\) まで——幅にして \(1/\eta\) 倍。
-      \(\eta\) は 0.1〜0.2 が相場です。下の 6.5 節の教材でノイズを入れて、
-      \(\eta\) を動かすと制御入力の「毛羽立ち」がどう変わるか見てください。
+      \(\eta\) は 0.1〜0.2 が相場です。
     </p>
+    <p>
+      6.2 と同じ実験を、微分だけ不完全微分に差し替えてやり直します。
+      今度は \(K_d\) をいくら上げても暴走しません——上限が \(K_p/\eta\) で
+      頭打ちだからです。ノイズを入れて \(\eta\) を動かすと、
+      「切れ味」と「うるささ」のトレードオフが制御入力に現れます。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="incompCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>\(K_d\):
+          <input type="range" id="ibKd" min="0" max="40" value="20">
+          <span id="ibKdVal"></span>
+        </label>
+        <label>η:
+          <input type="range" id="ibEta" min="5" max="50" value="13">
+          <span id="ibEtaVal"></span>
+        </label>
+        <label><input type="checkbox" id="ibNoise"> 計測ノイズ（σ=3 rad/s）</label>
+      </div>
+      <div class="sim-readout" id="incompReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 6.2 と同じ実験（目標 +300 rad/s・負荷外乱つき）。P・I は固定
+      （\(K_p=10^{-3}, K_i=0.2\)）、微分は不完全微分・偏差入力。
+      上段=回転数、下段=制御入力（Duty）。
+    </p>
+
+    <ul>
+      <li>6.2 では暴走した大きさの \(K_d\) でも、平気で安定しています。</li>
+      <li>ノイズを入れて \(\eta\) を小さくすると制御入力が毛羽立ち、
+        大きくすると鎮まります（上限 \(K_p/\eta\) の実演）。</li>
+      <li>ただし、目標ステップの瞬間に制御入力へ<strong>鋭いトゲ</strong>が
+        立っているのに気づきましたか？ これが次節の主役です。</li>
+    </ul>
 
     <h2>6.4 微分キックと微分先行 — D は測定値に掛ける</h2>
     <p>
@@ -172,55 +221,40 @@
       （ソースコード pid.hpp で確認済み）。
     </p>
     <p>
-      ここまでの進化——教科書のままの PID → 不完全微分 → PI-D——を、
-      1つの画面で正直に並べてみます。開いた直後に見えるのは、
-      教科書の式をそのまま実装した PID の姿です。
+      6.3 の実験の続きです。同じ条件のまま、<strong>D の掛け先だけを変えた2本</strong>
+      （偏差 vs 測定値）と、D なしの基準を重ねて描きます。
     </p>
 
     <div class="sim-panel">
-      <canvas id="evoCanvas" width="760" height="430"></canvas>
-      <div class="sim-opts">
-        <label>微分の実装:
-          <select id="evoKind">
-            <option value="ideal-err" selected>① 教科書のままの PID（理想微分・偏差）</option>
-            <option value="filt-err">② 不完全微分（偏差）</option>
-            <option value="filt-meas">③ 不完全微分・測定値（PI-D）</option>
-            <option value="none">比較用: D なし（PI）</option>
-          </select>
-        </label>
-      </div>
-      <div class="sim-readout" id="evoReadout"></div>
+      <canvas id="kickCanvas" width="760" height="430"></canvas>
+      <div class="sim-readout" id="kickReadout"></div>
     </div>
 
     <p class="src">
-      条件: 6.2 と同じモータ、目標 +200 rad/s のステップ。\(K_p=10^{-3},\ K_i=0.05,\
-      K_d=10^{-5}\)（\(T_d\)=10ms）、\(\eta=0.125\)、制御周期 0.1 ms、
-      Duty 飽和 ±0.5（実機と同じく出力には限りがある）。
-      上段=回転数、下段=制御入力。
+      条件: 6.3 と同じ（\(K_p=10^{-3}, K_i=0.2, K_d=6\times10^{-6}, \eta=0.125\)、
+      目標 +300 rad/s・負荷外乱つき・ノイズなし）。
+      上段=回転数（3本）、下段=制御入力（D あり2本）。
     </p>
 
     <ul>
-      <li><strong>① 教科書のまま</strong> → <strong>暴走します</strong>。目標ステップの瞬間に
-        微分項が全開の数十倍を要求し、以後は出力が +全開↔−全開を毎周期往復する
-        チャタリング（高速なバタつき）に陥って戻ってきません。キックだけの問題では
-        ないのです——理想微分はゲインが高周波で頭打ちにならないため、
-        制御周期1回分の遅れすら許容できず、<strong>ループごと不安定</strong>になります。</li>
-      <li><strong>② 不完全微分</strong> → 安定します（フィルタがゲインを \(K_p/\eta\) で
-        打ち止めにするから）。ただしステップの瞬間、微分項は 1.6 Duty＝
-        <strong>全開の3倍超</strong>を一瞬要求します（飽和でクリップ）。
-        スティック由来の階段状指令では、これが毎回モータを蹴ります。</li>
-      <li><strong>③ PI-D</strong> → キックが消え、制御入力はなめらかになります。
-        これで「実機に載せられる微分」の完成です。</li>
+      <li><strong>制御入力（下段）は別世界</strong>: 偏差に掛けた D は目標ステップの瞬間に
+        \(K_p \Delta r/\eta = 2.4\) Duty のトゲを立てます（毎回！）。
+        測定値に掛けた D にはトゲがありません。</li>
+      <li><strong>外乱（t=1.5s）への応答は、D あり2本で完全に一致</strong>——
+        「閉ループの極は同じ、違いは目標値側の零点だけ」の実証です。</li>
+      <li>偏差D の目標応答が一番きれいに見えますが、それは 2.7 Duty のトゲで
+        買った「先払いのブレーキ」です。実機ではモータ全開の 5 倍——
+        飽和で出せないので、この見かけの利得は実機では消えます。
+        実機で使える<strong>測定値D で比べると、行き過ぎは D なしの2倍</strong>
+        （13% → 26%）に増えています。</li>
     </ul>
 
     <p>
-      ところで、③ の回転数を比較用の「D なし（PI）」と見比べると、
-      わずかに行き過ぎています。
-      6.5 節の教材でこのモータに D（測定値側）を入れてみると——教科書の期待に反して
-      <strong>応答は悪化します</strong>。一次遅れのプラントでは、回転数の変化に
-      逆らう D は「重り」として働き、プラントを見かけ上遅くするだけだからです
-      （実効時定数が \(\tau + K_m K_d\) に伸びる）。遅くなったプラントを
-      I が急かすので、振動はむしろ育ちます。
+      種明かしをすると、一次遅れのプラントでは、回転数の変化に逆らう D は
+      「重り」として働きます（実効時定数が \(\tau + K_m K_d\) に伸びる）。
+      重りは外乱にも逆らうので落ち込みはわずかに浅くなりますが、
+      戻りは遅くなり、遅くなったプラントを I が急かすので目標応答は振動的になる——
+      教科書の期待に反して、<strong>このプラントに D を入れる理由はありません</strong>。
     </p>
 
     <div class="note-box">
@@ -279,53 +313,30 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
     </div>
 
     <p>
-      仕上げの実験です。大きなステップ（飽和が続く）と小さなステップ＋ノイズで、
-      この章で学んだ工夫の効果を確かめてください。
+      仕上げの実験です。飽和が長く続く大きなステップで、ワインドアップの被害と
+      条件付き積分の効果を確かめてください。
     </p>
 
     <div class="sim-panel">
       <canvas id="realCanvas" width="760" height="430"></canvas>
       <div class="sim-opts">
-        <label>シナリオ:
-          <select id="wScen">
-            <option value="big" selected>大ステップ 1800（飽和→ワインドアップ）</option>
-            <option value="small">小ステップ 200＋ノイズ（微分の現実）</option>
-          </select>
-        </label>
-        <label>微分:
-          <select id="wDmode">
-            <option value="none" selected>なし</option>
-            <option value="err">偏差に掛ける（キック）</option>
-            <option value="meas">測定値に掛ける（PI-D）</option>
-          </select>
-        </label>
-        <label>η:
-          <input type="range" id="wEta" min="5" max="50" value="13">
-          <span id="wEtaVal"></span>
-        </label>
-        <label><input type="checkbox" id="wAw"> 条件付き積分</label>
-        <label><input type="checkbox" id="wNoise"> 計測ノイズ</label>
+        <label><input type="checkbox" id="wAw"> 条件付き積分（アンチワインドアップ）</label>
       </div>
       <div class="sim-readout" id="realReadout"></div>
     </div>
 
     <p class="src">
-      条件: PI は固定（\(K_p=0.001,\ K_i=0.05\)、微分オン時 \(K_d=3\times10^{-5}\)）。
-      Duty の飽和 ±0.5（ホバ点まわり）。ノイズは回転数計測に σ=3 rad/s の白色雑音。
+      条件: PI 制御（\(K_p=0.001,\ K_i=0.05\)——飽和がなければオーバーシュートしない
+      おとなしい設計）。目標 +1800 rad/s、Duty の飽和 ±0.5。
       上段=回転数、下段=制御入力（Duty）。
     </p>
 
     <ul>
-      <li><strong>大ステップ・条件付き積分なし</strong> → 出力が張り付いている間に積分が育ち、
-        目標を大きく超えてから戻る（線形設計ではオーバーシュートしないゲインなのに！）。
-        条件付き積分を入れると消えます。</li>
-      <li><strong>小ステップ・微分=偏差</strong> → 指令の瞬間に Duty が跳ねる（微分キック）。
-        測定値側に切り替えると消えます。回転数の応答はほぼ変わらないことにも注目。</li>
-      <li><strong>ノイズ＋微分オン</strong> → Duty が毛羽立ちます。η を上げると
-        毛羽立ちは減り（ゲイン上限 \(K_p/\eta\) が下がる）、微分の切れ味も鈍ります。</li>
-      <li><strong>小ステップで微分オン vs なし</strong> → 6.4 節で予告した「重り」効果。
-        D を入れた途端にオーバーシュートが現れます（なし 0.4% → 測定値D 22%）。
-        一次遅れに D は要らない、を数字で確認してください。</li>
+      <li><strong>条件付き積分なし</strong> → 出力が飽和に張り付いている間に積分が育ち、
+        目標を 15% も超えてから、育った積分を吐き出しながらゆっくり戻ります。
+        飽和がなければオーバーシュートしないはずの設計なのに、です。</li>
+      <li><strong>条件付き積分あり</strong> → 飽和中は積分が止まり、
+        オーバーシュートが消えます。制御入力が飽和から離れる瞬間の違いに注目。</li>
     </ul>
 
     <h2>6.6 実機の実装を読む</h2>
@@ -480,12 +491,18 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         }
         integ = iNext;
         y += ((KM * (u + (t >= opt.tDist ? opt.dU : 0)) - y) / TAU) * dt;
+        if (!isFinite(y) || Math.abs(y) > 1e5) {           // 暴走検出 / blow-up
+          ts.push(t); ysArr.push(Math.sign(y) * 1e5 || 1e5); usArr.push(u);
+          return { ts, ys: ysArr, us: usArr, blown: true, peak: 1e5,
+                   os: Infinity, e145: NaN, eEnd: NaN, satTime: satSteps * dt };
+        }
         if (t > opt.tRef && y > peak) peak = y;
         if (e145 === null && t >= 1.45) e145 = r - y;
         eEnd = r - y;
         if (i % step === 0) { ts.push(t); ysArr.push(y); usArr.push(u); }
       }
-      return { ts, ys: ysArr, us: usArr, peak, os: Math.max(0, (peak / opt.ref - 1) * 100),
+      return { ts, ys: ysArr, us: usArr, blown: false, peak,
+               os: Math.max(0, (peak / opt.ref - 1) * 100),
                e145, eEnd, satTime: satSteps * dt };
     }
 
@@ -497,9 +514,13 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.clearRect(0, 0, cv.width, cv.height);
         const kp = Number($('rKp').value) * 1e-4;
         const ki = Number($('rKi').value) * 1e-2;
+        const kd = Number($('rKd').value) * 3e-7;          // 0〜6e-6
         $('rKpVal').textContent = kp.toExponential(1);
         $('rKiVal').textContent = ki.toFixed(2);
-        const res = simulate({ kp, ki, ref: 300, dU: -0.05, tDist: 1.5 });
+        $('rKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
+        // 教科書のままの理想微分（偏差入力）: τf=dt でフィルタなしの生の差分になる
+        // textbook ideal derivative on the error (tauF=dt -> raw difference)
+        const res = simulate({ kp, ki, kd, dMode: 'err', tauF: DT, ref: 300, dU: -0.05, tDist: 1.5 });
         const x0 = 70, w = 660, h = 250, yMax = 450, tMax = 2.5;
         drawAxes(ctx, x0, 26, w, h, '0', String(yMax), '回転数変化 [rad/s]');
         // reference line / 目標線
@@ -519,124 +540,120 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.fillStyle = c.fg; ctx.textAlign = 'center';
         ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
         const essTheory = 300 / (1 + kp * KM);
-        $('rolesReadout').textContent =
-          `外乱前の残留誤差 ${res.e145.toFixed(1)} rad/s` +
-          (ki === 0 ? `（P単独の理論値 r/(1+KpKm) = ${essTheory.toFixed(1)}）` : '') +
-          ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
+        $('rolesReadout').textContent = res.blown
+          ? '暴走！ 教科書の式に嘘はないのに、なぜ？ —— 種明かしは 6.3 節'
+          : `外乱前の残留誤差 ${res.e145.toFixed(1)} rad/s` +
+            (ki === 0 ? `（P単独の理論値 r/(1+KpKm) = ${essTheory.toFixed(1)}）` : '') +
+            ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
       }
-      ['rKp', 'rKi'].forEach(id => $(id).addEventListener('input', redraw));
+      ['rKp', 'rKi', 'rKd'].forEach(id => $(id).addEventListener('input', redraw));
       redraw();
     })();
 
-    // ---------- 6.4 derivative evolution lab / 微分の進化ラボ ----------
+    // ---------- 6.3 incomplete derivative lab / 不完全微分の実験 ----------
     (function () {
-      const cv = $('evoCanvas'), ctx = cv.getContext('2d');
-      // plant integrated at 1e-5 s, controller ZOH at 1e-4 s (10 kHz)
-      // プラントは1e-5刻み・制御器は0.1ms周期のZOH（理想微分の不安定は物理・数値でない）
-      const DTP = 1e-5, TS = 1e-4, SPC = 10, SAT = 0.5;
-      const KP2 = 1e-3, KI2 = 0.05, KD2 = 1e-5, ETA2 = 0.125;
-      const TAUF2 = ETA2 * (KD2 / KP2);
-      function simEvo(kind) {
-        const tEnd = 1.2, n = Math.round(tEnd / DTP);
-        let y = 0, integ = 0, dState = 0, prevIn = null, u = 0;
-        let dPeak = 0, yPk = 0, yMn = 0, flips = 0, prevU = 0, peakAfter = 0;
-        const step = Math.round(0.002 / DTP);
-        const ts = [], ys = [], us = [];
-        for (let i = 0; i < n; i++) {
-          const t = i * DTP, r = t >= 0.2 ? 200 : 0;
-          if (i % SPC === 0) {
-            const e = r - y;
-            const dIn = kind === 'filt-meas' ? -y : e;
-            if (prevIn === null) prevIn = dIn;
-            let dTerm = 0;
-            if (kind === 'ideal-err') dTerm = KD2 * (dIn - prevIn) / TS;
-            else if (kind !== 'none') { dState += ((dIn - prevIn) / TS - dState) * (TS / TAUF2); dTerm = KD2 * dState; }
-            prevIn = dIn;
-            integ += KI2 * e * TS;
-            u = Math.max(-SAT, Math.min(SAT, KP2 * e + integ + dTerm));
-            dPeak = Math.max(dPeak, Math.abs(dTerm));
-            if (t > 0.25 && Math.sign(u) !== Math.sign(prevU) && Math.abs(u) > 0.4) flips++;
-            prevU = u;
-          }
-          y += ((KM * u - y) / TAU) * DTP;
-          yPk = Math.max(yPk, y); yMn = Math.min(yMn, y);
-          if (t > 0.2) peakAfter = Math.max(peakAfter, y);
-          if (i % step === 0) { ts.push(t); ys.push(y); us.push(u); }
-        }
-        return { ts, ys, us, dPeak, yPk, yMn, flips,
-                 os: Math.max(0, (peakAfter / 200 - 1) * 100), settled: Math.abs(y - 200) < 4 };
-      }
-      function redraw() {
+      const cv = $('incompCanvas'), ctx = cv.getContext('2d');
+      function drawUV(res, uMaxDyn) {
         const c = themeColors();
-        ctx.clearRect(0, 0, cv.width, cv.height);
-        const kind = $('evoKind').value;
-        const res = simEvo(kind);
-        const x0 = 70, w = 660, tMax = 1.2;
-        const yMax = Math.max(300, Math.ceil(res.yPk * 1.1 / 100) * 100);
-        const yMin = Math.min(0, Math.floor(res.yMn * 1.1 / 100) * 100);
-        const hT = 210;
-        drawAxes(ctx, x0, 24, w, hT, String(yMin), String(yMax), '回転数 [rad/s]');
-        const yr = 24 + hT * ((yMax - 200) / (yMax - yMin));
+        const x0 = 70, w = 660, tMax = 2.5;
+        const hT = 210, yMax = 450;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
+        const yr = 24 + hT * ((yMax - 300) / yMax);
         ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('目標 200', x0 + w - 64, yr - 6);
-        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, yMin, yMax, c.accent, 2.2);
+        ctx.fillText('目標 300', x0 + w - 64, yr - 6);
+        plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, 0, yMax, c.accent, 2.2);
         const yB = 262, hB = 130;
-        drawAxes(ctx, x0, yB, w, hB, '-0.6', '0.6', '入力 [Duty]');
-        [0.5, -0.5].forEach(v => {
-          const yy = yB + hB * ((0.6 - v) / 1.2);
-          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
-          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
-          ctx.setLineDash([]);
-        });
-        ctx.fillStyle = '#c2373b'; ctx.textAlign = 'left';
-        ctx.fillText('飽和 ±0.5', x0 + 6, yB + 12);
-        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -0.6, 0.6, '#2e8b57', 1.6);
+        drawAxes(ctx, x0, yB, w, hB, String(-uMaxDyn), String(uMaxDyn), '入力 [Duty]');
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -uMaxDyn, uMaxDyn, '#2e8b57', 1.6);
         ctx.fillStyle = c.fg; ctx.textAlign = 'center';
         ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
-        let msg;
-        if (kind === 'ideal-err') {
-          msg = `暴走！ 微分項の要求ピーク ${res.dPeak.toFixed(0)} Duty（全開の${(res.dPeak / SAT).toFixed(0)}倍）` +
-                ` | 出力のレール間反転 ${res.flips} 回（チャタリング） | 整定せず`;
-        } else if (kind === 'filt-err') {
-          msg = `微分項の要求ピーク ${res.dPeak.toFixed(2)} Duty（全開の${(res.dPeak / SAT).toFixed(1)}倍・クリップ）` +
-                ` | オーバーシュート ${res.os.toFixed(1)} %`;
-        } else if (kind === 'filt-meas') {
-          msg = `微分項の要求ピーク ${res.dPeak.toFixed(2)} Duty（キックなし）` +
-                ` | オーバーシュート ${res.os.toFixed(1)} %`;
-        } else {
-          msg = `PI のみ | オーバーシュート ${res.os.toFixed(1)} %`;
-        }
-        $('evoReadout').textContent = msg;
       }
-      $('evoKind').addEventListener('change', redraw);
+      function redraw() {
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kd = Number($('ibKd').value) * 3e-7;         // 0〜1.2e-5
+        const eta = Number($('ibEta').value) / 100;
+        $('ibKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
+        $('ibEtaVal').textContent = eta.toFixed(2);
+        const kp = 1e-3, ki = 0.2;
+        const tauF = Math.max(eta * (kd / kp), 2 * DT);
+        const noise = $('ibNoise').checked ? 3 : 0;
+        const res = simulate({ kp, ki, kd, dMode: 'err', tauF, noise, ref: 300, dU: -0.05, tDist: 1.5 });
+        const uPk = Math.max(...res.us.map(Math.abs));
+        const uMaxDyn = Math.max(0.5, Math.ceil(uPk * 1.2 * 10) / 10);
+        drawUV(res, uMaxDyn);
+        // 制御入力の毛羽立ち（外乱後の定常区間の標準偏差）/ steady-tail u std
+        const tail = res.us.filter((_, i) => res.ts[i] > 2.0);
+        const m = tail.reduce((a, b) => a + b, 0) / tail.length;
+        const std = Math.sqrt(tail.reduce((a, b) => a + (b - m) ** 2, 0) / tail.length);
+        $('incompReadout').textContent =
+          `暴走せず安定 | オーバーシュート ${res.os.toFixed(1)} % | ` +
+          `入力の毛羽立ち σ=${std.toExponential(1)} Duty（上限 Kp/η=${(kp / eta).toExponential(1)}） | ` +
+          `ステップ瞬間の入力ピーク ${uPk.toFixed(2)} Duty ← このトゲが次節の主役`;
+      }
+      ['ibKd', 'ibEta'].forEach(id => $(id).addEventListener('input', redraw));
+      $('ibNoise').addEventListener('change', redraw);
       redraw();
     })();
 
-    // ---------- 6.5 implementation reality / 実装の現実 ----------
+    // ---------- 6.4 kick comparison: error-D vs measurement-D / 掛け先比較 ----------
+    (function () {
+      const cv = $('kickCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = 1e-3, ki = 0.2, kd = 6e-6, eta = 0.125;
+        const tauF = eta * (kd / kp);
+        const base = { kp, ki, ref: 300, dU: -0.05, tDist: 1.5 };
+        const rNone = simulate(Object.assign({}, base));
+        const rErr  = simulate(Object.assign({ kd, dMode: 'err',  tauF }, base));
+        const rMeas = simulate(Object.assign({ kd, dMode: 'meas', tauF }, base));
+        const x0 = 70, w = 660, tMax = 2.5;
+        const hT = 210, yMax = 450;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
+        const yr = 24 + hT * ((yMax - 300) / yMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        plotXY(ctx, rNone.ts, rNone.ys, x0, 24, w, hT, tMax, 0, yMax, c.muted, 1.4);
+        plotXY(ctx, rErr.ts,  rErr.ys,  x0, 24, w, hT, tMax, 0, yMax, '#c2373b', 2.2);
+        plotXY(ctx, rMeas.ts, rMeas.ys, x0, 24, w, hT, tMax, 0, yMax, c.accent, 2.2);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = c.muted;  ctx.fillText('D なし', x0 + 8, 20);
+        ctx.fillStyle = '#c2373b'; ctx.fillText('D＝偏差', x0 + 70, 20);
+        ctx.fillStyle = c.accent; ctx.fillText('D＝測定値（PI-D）', x0 + 145, 20);
+        const yB = 262, hB = 130, uMaxDyn = 3;
+        drawAxes(ctx, x0, yB, w, hB, String(-uMaxDyn), String(uMaxDyn), '入力 [Duty]');
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, rErr.ts,  rErr.us,  x0, yB, w, hB, tMax, -uMaxDyn, uMaxDyn, '#c2373b', 1.8);
+        plotXY(ctx, rMeas.ts, rMeas.us, x0, yB, w, hB, tMax, -uMaxDyn, uMaxDyn, c.accent, 1.8);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        const uPkErr = Math.max(...rErr.us.map(Math.abs));
+        const uPkMeas = Math.max(...rMeas.us.map(Math.abs));
+        $('kickReadout').textContent =
+          `入力ピーク: 偏差D ${uPkErr.toFixed(2)} Duty / 測定値D ${uPkMeas.toFixed(2)} Duty | ` +
+          `オーバーシュート: Dなし ${rNone.os.toFixed(1)} % / 偏差D ${rErr.os.toFixed(1)} % / 測定値D ${rMeas.os.toFixed(1)} %`;
+      }
+      redraw();
+    })();
+
+    // ---------- 6.5 windup lab / ワインドアップ実験 ----------
     (function () {
       const cv = $('realCanvas'), ctx = cv.getContext('2d');
       function redraw() {
         const c = themeColors();
         ctx.clearRect(0, 0, cv.width, cv.height);
-        const scen = $('wScen').value;
-        const dMode = $('wDmode').value;
-        const eta = Number($('wEta').value) / 100;
-        $('wEtaVal').textContent = eta.toFixed(2);
-        const kp = 1e-3, ki = 0.05, kd = dMode === 'none' ? 0 : 3e-5;
-        const td = kd / kp;                       // Td = Kd/Kp
-        const o = {
-          kp, ki, kd, dMode, tauF: Math.max(eta * td, 2 * DT),
-          sat: 0.5, aw: $('wAw').checked,
-          noise: $('wNoise').checked ? 3 : 0,
-          ref: scen === 'big' ? 1800 : 200, tEnd: 2.0,
-        };
+        const o = { kp: 1e-3, ki: 0.05, sat: 0.5, aw: $('wAw').checked, ref: 1800, tEnd: 2.0 };
         const res = simulate(o);
-        const x0 = 70, w = 660, tMax = 2.0;
-        const yMax = scen === 'big' ? 2400 : 300;
-        // --- top: speed / 上段: 回転数 ---
+        const x0 = 70, w = 660, tMax = 2.0, yMax = 2400;
         const hT = 210;
         drawAxes(ctx, x0, 24, w, hT, '0', String(yMax), '回転数 [rad/s]');
         const yr = 24 + hT * ((yMax - o.ref) / yMax);
@@ -646,7 +663,6 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
         ctx.fillText('目標 ' + o.ref, x0 + w - 70, yr - 6);
         plotXY(ctx, res.ts, res.ys, x0, 24, w, hT, tMax, 0, yMax, c.accent, 2.4);
-        // --- bottom: duty / 下段: 制御入力 ---
         const yB = 262, hB = 130;
         drawAxes(ctx, x0, yB, w, hB, '-0.6', '0.6', '入力 [Duty]');
         [0.5, -0.5].forEach(v => {
@@ -657,7 +673,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         });
         ctx.fillStyle = '#c2373b'; ctx.textAlign = 'left';
         ctx.fillText('飽和 ±0.5', x0 + 6, yB + 12);
-        const y0line = yB + hB * (0.6 / 1.2);
+        const y0line = yB + hB * 0.5;
         ctx.strokeStyle = c.border;
         ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
         plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tMax, -0.6, 0.6, '#2e8b57', 1.8);
@@ -665,13 +681,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
         $('realReadout').textContent =
           `オーバーシュート ${res.os.toFixed(1)} % | 飽和していた時間 ${res.satTime.toFixed(2)} s | ` +
-          (o.aw ? '条件付き積分: ON' : '条件付き積分: OFF') +
-          (o.noise ? ` | ノイズON（微分の毛羽立ち上限 ∝ Kp/η = ${(kp / eta).toExponential(1)}）` : '');
+          (o.aw ? '条件付き積分: ON（飽和中は積分停止）' : '条件付き積分: OFF（積分は飽和中も育つ）');
       }
-      ['wScen', 'wDmode', 'wEta', 'wAw', 'wNoise'].forEach(id => {
-        $(id).addEventListener('input', redraw);
-        $(id).addEventListener('change', redraw);
-      });
+      $('wAw').addEventListener('change', redraw);
       redraw();
     })();
   })();
