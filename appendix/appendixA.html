@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>付録A コーストダウン試験 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    figure.photo { margin: 1.5rem 0; }
+    figure.photo img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+    figure.photo figcaption { font-size: 0.8rem; color: var(--fg-muted); margin-top: 0.4rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 付録A（第4章の補足）</p>
+    <h1>コーストダウン試験</h1>
+    <p class="subtitle">電気を使わずに J/C_Q を測る — 実際の波形とともに</p>
+  </header>
+
+  <main>
+    <p>
+      第4章の表に出てくる \(J/C_Q = 335\ \mathrm{s\,rad}\) という数字が
+      どうやって測られたのか、実際の波形を追いながら再現します。
+      この試験のうれしさは、<strong>電気の知識（\(K_e\) や \(R\)）を一切使わない</strong>ことです。
+      電源を切った後の世界には、慣性と空気しかいません。
+    </p>
+
+    <h2>A.1 原理 — 電源を切れば、残るのは慣性と空気だけ</h2>
+    <p>
+      回転中のプロペラの電源を突然切ると、電流はゼロになり、
+      運動方程式はこれだけになります:
+    </p>
+    <div class="math-scroll">
+    $$J\,\dot{\omega} = -C_Q\,\omega^2$$
+    </div>
+    <p>
+      これは変数分離ですぐ解けますが、もっと便利な形があります。
+      両辺を \(-J\omega^2\) で割ると:
+    </p>
+    <div class="math-scroll">
+    $$\frac{d}{dt}\left(\frac{1}{\omega}\right) = -\frac{\dot\omega}{\omega^2} = \frac{C_Q}{J}$$
+    </div>
+    <p>
+      つまり <strong>\(1/\omega\) を時間に対してプロットすると直線</strong>になり、
+      その傾きがそのまま \(C_Q/J\) です。カーブフィットの前に、
+      「直線になるか」を目で確かめられる——同定ではこの形の見通しの良さが効きます。
+    </p>
+
+    <h2>A.2 セットアップ — 回転数は光で数える</h2>
+    <p>
+      回転数の計測には反射式フォトインタラプタ（発光と受光が並んだ素子。
+      正面に反射物が来ると出力が変わる）を使い、プロペラに向けて固定します。
+      ブレードが通過するたびに出力がへこみ、さらに1枚のブレード根元に貼った
+      <strong>反射テープ</strong>が1回転に1回、ひときわ深いへこみを作ります。
+      出力はオシロスコープで記録します。使うのは<strong>時刻情報だけ</strong>なので、
+      振幅の較正は不要です。
+    </p>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/a1_waveform_zoom.png" alt="フォトインタラプタの生波形">
+      <figcaption>
+        図A-1: 生波形（定常回転中の約2.5回転分）。4枚のブレードが等間隔に4つの
+        ディップを作り、反射テープのディップだけが深い。テープの間隔 = 1回転の周期。
+      </figcaption>
+    </figure>
+
+    <div class="note-box">
+      <strong>コラム — 4倍事件:</strong> 最初の解析では、深さのしきい値だけでパルスを
+      数えたため、ブレードの4ディップを全部「テープ」と誤認し、回転数を
+      <strong>4倍</strong>に読んでいました。気づいたきっかけは物理量チェックです——
+      その回転数から出るモータの \(K_v\) は 56,000 rpm/V。この級のモータの相場
+      （数千〜1万台）から桁違いで、「解析がおかしい」と分かりました。
+      対策は「深さのしきい値」ではなく<strong>「両隣のディップより深いものだけを
+      テープと認める」</strong>という相対判定。数字が出たら、まず物理の相場と
+      突き合わせる——同定の基本動作です。
+    </div>
+
+    <h2>A.3 ω(t) を復元する</h2>
+    <p>
+      テープパルスの時刻列 \(t_k\) が取れれば、各回転の平均角速度は
+      \(\omega_k = 2\pi/(t_{k+1}-t_k)\) です。記録全体に適用すると:
+    </p>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/a2_omega.png" alt="復元したω(t)">
+      <figcaption>
+        図A-2: 復元した ω(t)。Duty 10% で回して定常（1209 rad/s）に達した後、
+        電源をカット。以降が解析に使う「コーストダウン」区間。
+      </figcaption>
+    </figure>
+
+    <h2>A.4 1/ω は直線になる——はずが、反っている</h2>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/a3_inverse_omega.png" alt="1/ωのフィット">
+      <figcaption>
+        図A-3: コースト区間の 1/ω。緑の破線が「空力だけ」の直線。実測（青点）は
+        後半（低速側）で上に反っていく。赤線はクーロン摩擦まで含めた
+        3項モデル \(\dot\omega = -a\omega^2 - b\omega - c\) のフィット。
+      </figcaption>
+    </figure>
+
+    <p>
+      よく見ると、実測は直線から<strong>上に反って</strong>います。犯人は軸受などの
+      <strong>クーロン摩擦</strong>（速度によらない一定トルク \(\tau_c\)）です。
+      摩擦を含めた運動方程式で書き直すと:
+    </p>
+    <div class="math-scroll">
+    $$\frac{d}{dt}\left(\frac{1}{\omega}\right) = \frac{C_Q}{J} + \frac{\tau_c/J}{\omega^2}$$
+    </div>
+    <p>
+      第2項は \(\omega\) が小さくなるほど効くので、減速の後半で直線から外れる——
+      図の反りはこの式の署名そのものです。そこで直線ではなく
+      3項モデルを全域フィットすると、\(J/C_Q = 1/a \approx 333\ \mathrm{s\,rad}\)
+      と摩擦 \(\tau_c \approx 9.4\times10^{-6}\ \mathrm{N\,m}\) が同時に得られます
+      （本編の確定値 335 は前処理の細部が異なる解析で、差は1%未満）。
+      安易に「直線の傾き」を全域で取ると、摩擦の分だけ傾きが水増しされ、
+      \(J/C_Q\) を4割も小さく見積もってしまいます——<strong>モデルの外にある物理は、
+      無視すると必ず数字を曲げます</strong>。
+    </p>
+
+    <h2>A.5 結果と使い道</h2>
+    <ul>
+      <li>\(J/C_Q = 335\ \mathrm{s\,rad}\)（3項フィット・確定値）、
+        \(\tau_c \approx 9.5\times10^{-6}\ \mathrm{N\,m}\)</li>
+      <li>\(C_Q = 4.10\times10^{-11}\)（ベンチ実測）と合成して
+        \(J_{mp} = 1.375\times10^{-8}\ \mathrm{kg\,m^2}\)——
+        付録Bの写真法・分解実測と独立に照合できる</li>
+      <li>ヨー軸の零点 \(\tau_z = J_{mp}/(2C_Q\omega_0)\)（第4章）は
+        実は \(J/C_Q\) だけで決まる: \(\tau_z = (J/C_Q)/(2\omega_0) = 45.7\ \mathrm{ms}\)</li>
+    </ul>
+
+    <p class="src">
+      データ: data/stampfly_prop_round_test.wfm（2秒 Duty10% → カット）。
+      解析の再現: notes/calc/coastdown_id.py（本解析）、
+      notes/calc/make_appendix_figs.py（本ページの図）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="../chapters/chapter04.html">← 第4章に戻る</a>
+      <a href="appendixB.html">付録B 写真から慣性モーメント →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+</body>
+</html>

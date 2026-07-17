@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>付録C 電流を測らずに Ke を測る | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    figure.photo { margin: 1.5rem 0; }
+    figure.photo img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+    figure.photo figcaption { font-size: 0.8rem; color: var(--fg-muted); margin-top: 0.4rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 付録C（第4章の補足）</p>
+    <h1>電流を測らずに K<sub>e</sub> を測る</h1>
+    <p class="subtitle">測りたい量だけが残る条件を作る</p>
+  </header>
+
+  <main>
+    <p>
+      逆起電力定数 \(K_e\)（= SI単位系ではトルク定数 \(K_t\)）は、モータモデルの心臓部です。
+      定石は「電圧・電流・回転数を測って \(V = K_e\omega + RI\) を解く」ですが、
+      StampFly の基板に電流シャント（電流計測用の抵抗）はありません。
+      そこで発想を変えます——<strong>電流がゼロの瞬間を作ってしまえば、
+      電流計は要らない</strong>。
+    </p>
+
+    <h2>C.1 原理 — 電源を切った瞬間、端子電圧は発電機の声になる</h2>
+    <p>
+      モータの電圧方程式は \(V = K_e\omega + RI\)（インダクタンスは第4章のとおり
+      無視できる）。電源を切ると駆動FETが開き、電流の通り道がなくなるので
+      \(I = 0\)。すると:
+    </p>
+    <div class="math-scroll">
+    $$V_{\text{端子}} = V_{BAT} - K_e\,\omega$$
+    </div>
+    <p>
+      （端子はハイサイドが電池につながった回路構成なので、逆起電力の分だけ
+      電池電圧から下がって見えます。）\(IR\) 降下が消えたので、
+      この式には <strong>\(R\) すら入っていません</strong>。惰性で回り続ける間の
+      端子電圧と回転数を同時に記録して \(V\)–\(\omega\) 平面に描けば、
+      傾きがそのまま \(-K_e\)、切片が電池電圧になるはずです。
+    </p>
+
+    <h2>C.2 記録 — 2チャネル同時収録</h2>
+    <p>
+      CH1 に付録Aと同じフォトインタラプタ（回転数用）、CH2 にモータ端子
+      （FETのドレイン）電圧をつないで、回転→電源カット→停止までを
+      1回の掃引で記録します。
+    </p>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/c1_overview.png" alt="収録全景">
+      <figcaption>
+        図C-1: CH2（端子電圧）の全景。回転中は PWM のスイッチングで塗りつぶされて
+        見えるが、電源カットの瞬間から静かな曲線に変わる——これが
+        \(V_{BAT}-K_e\omega\)。完全に停止すると電池電圧そのもの（4.085 V）に落ち着く。
+      </figcaption>
+    </figure>
+
+    <h2>C.3 直線を引く</h2>
+    <p>
+      コースト中の各回転について端子電圧を平均し（PWMは止まっているので
+      ノイズ均しの意味だけ）、その回転の \(\omega\) と組にして散布図を描きます:
+    </p>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/c2_ke_fit.png" alt="V-ω直線フィット">
+      <figcaption>
+        図C-2: \(V\)–\(\omega\) 散布図。ほぼ完全な直線（R² = 0.9995）。
+        傾きから \(K_e = 5.682\times10^{-4}\ \mathrm{V\,s/rad}\)。
+        切片 4.093 V は、独立に測れる「停止後の電池電圧」4.085 V と 0.2% で一致。
+      </figcaption>
+    </figure>
+
+    <p>
+      検算が2重に効いています。①<strong>切片 = 電池電圧</strong>: フィットの切片
+      4.093 V と、停止後の直流レベル 4.085 V が独立に一致。
+      ②<strong>物理クランプ</strong>: 波形中に現れる負電圧の張り付きが、FET の
+      ボディダイオード（FET に構造上内蔵される寄生ダイオード）の順方向電圧
+      −0.46 V にぴったり一致し、電圧スケール自体の正しさを裏づけます。
+    </p>
+
+    <div class="note-box">
+      <strong>コラム — オシロの保存ファイルでやらかした話:</strong>
+      実はこの測定、最初はオシロの .wfm 保存ファイルから電圧を読んで
+      解析していました。ところが .wfm の生値→電圧の換算係数は<strong>公開されておらず、
+      しかも収録構成によって変わる</strong>ことが後から判明。誤った換算で
+      \(K_e = 5.33\times10^{-4}\) と 6% ずれた値を一度は「確定」させてしまいました。
+      気づかせてくれたのは上の②の物理クランプです（誤ったスケールでは
+      ボディダイオードの電圧が物理的にあり得ない値になった）。
+      最終的には LAN 経由の SCPI コマンド（:WAV:DATA?）で、
+      <strong>換算係数をオシロ自身に申告させて</strong>取得し直したのが本ページの
+      データです。教訓: <strong>換算は装置に語らせる。そして物理で検算する。</strong>
+    </div>
+
+    <h2>C.4 結果と使い道</h2>
+    <ul>
+      <li>\(K_e = K_t = 5.682\times10^{-4}\ \mathrm{V\,s/rad}\)（R² = 0.9995）。
+        別個体の無負荷 V–ω 実測（5.35〜5.53×10⁻⁴）とも個体差の範囲で整合</li>
+      <li>\(K_t K_e / R\) が「電気ブレーキ」の強さを決め、モータ実効時定数
+        16 ms の減衰の 64% を占める（第4章）</li>
+      <li>第6章のシミュレーションのプラント数値も、元をたどればこの直線の傾き</li>
+    </ul>
+
+    <p class="src">
+      データ: data/coastdown_scpi_refetch.npz（LAN/SCPI 直接取得・600万点）。
+      取得ツール: notes/calc/ds1054z_fetch.py（自作・依存ライブラリなし）。
+      解析の再現: notes/calc/ke_from_coastdown.py、notes/calc/make_appendix_figs.py。
+      経緯の全記録: notes/qa_log.md（Q4-17〜Q4-32）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="appendixB.html">← 付録B 写真から慣性モーメント</a>
+      <a href="appendixD.html">付録D 2点吊り法 →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+</body>
+</html>

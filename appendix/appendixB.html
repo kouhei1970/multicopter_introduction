@@ -1,0 +1,167 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>付録B 写真から慣性モーメント | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    figure.photo { margin: 1.5rem 0; }
+    figure.photo img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+    figure.photo figcaption { font-size: 0.8rem; color: var(--fg-muted); margin-top: 0.4rem; }
+    figure.diagram { margin: 1.5rem 0; text-align: center; }
+    figure.diagram svg { max-width: 100%; height: auto; }
+    figure.diagram figcaption { font-size: 0.8rem; color: var(--fg-muted); text-align: left; margin-top: 0.4rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 付録B（第4章の補足）</p>
+    <h1>写真から慣性モーメントを測る</h1>
+    <p class="subtitle">スマホカメラと定規と秤があれば、プロペラの J は測れる</p>
+  </header>
+
+  <main>
+    <p>
+      重さ 0.235 g のプロペラの慣性モーメントを、どうやって測るか。
+      捻り振子にかけるには軽すぎ、CAD データはありません。
+      答えは<strong>真上から写真を撮って、画素を数える</strong>——
+      デジタルカメラをそのまま測定器にする方法です。
+    </p>
+
+    <h2>B.1 原理 — 慣性モーメントは「r² の平均」</h2>
+    <p>
+      慣性モーメントの定義は \(I = \int r^2\,dm\)。プロペラのように
+      薄くて厚みがほぼ一様な部品なら、質量は面積に比例して分布する
+      （\(dm = (M/A)\,dA\)）ので:
+    </p>
+    <div class="math-scroll">
+    $$I = \frac{M}{A}\int r^2\,dA = M\,\langle r^2\rangle$$
+    </div>
+    <p>
+      つまり<strong>総質量 ×「面積で平均した \(r^2\)」</strong>。
+      そして写真の1画素は面積の1標本ですから、部品に属する画素を \(N\) 個集めれば:
+    </p>
+    <div class="math-scroll">
+    $$I \approx \frac{M}{N}\sum_{i=1}^{N} r_i^2$$
+    </div>
+    <p>
+      積分が「画素の \(r^2\) を足して割るだけ」になります。
+      これを<strong>画素直接積分</strong>と呼ぶことにします。
+      形の近似（長方形・台形など）を一切挟まないのがポイントです。
+    </p>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="画素直接積分の概念図" font-family="sans-serif">
+        <!-- blade-ish shape / ブレード風の形 -->
+        <ellipse cx="430" cy="105" rx="250" ry="46" fill="#7fc4ee55" stroke="#0b5cad" stroke-width="2"/>
+        <!-- center / 回転中心 -->
+        <circle cx="150" cy="105" r="4" fill="currentColor"/>
+        <text x="150" y="90" font-size="14" text-anchor="middle" fill="currentColor">回転中心</text>
+        <!-- sample pixels / 標本画素 -->
+        <rect x="300" y="95" width="9" height="9" fill="#c2373b"/>
+        <rect x="560" y="80" width="9" height="9" fill="#c2373b"/>
+        <line x1="150" y1="105" x2="302" y2="100" stroke="#c2373b" stroke-width="1.4"/>
+        <line x1="150" y1="105" x2="561" y2="85" stroke="#c2373b" stroke-width="1.4"/>
+        <text x="222" y="88" font-size="13" fill="#c2373b">r₁</text>
+        <text x="360" y="74" font-size="13" fill="#c2373b">r₂（遠い画素ほど r² で効く）</text>
+        <text x="430" y="196" font-size="14" text-anchor="middle" fill="currentColor">
+          I ≈ (M/N)·Σ rᵢ² — 部品に属する全画素で r² を平均して質量を掛ける</text>
+      </svg>
+      <figcaption>
+        画素直接積分の考え方。1画素=面積の1標本。中心から遠い画素は \(r^2\) で
+        重く数えられるので、翼端の形が正確に効いてくる——形を長方形などで
+        近似すると、ここが狂う。
+      </figcaption>
+    </figure>
+
+    <h2>B.2 手順 — 撮る、塗り分ける、数える</h2>
+    <ol>
+      <li><strong>撮影:</strong> プロペラを定規と一緒に、できるだけ真上から撮ります。
+        定規の目盛りから「1画素 = 何mm」のスケールを決めます（視差を抑えるため
+        離れて望遠気味に撮るのがコツ）。</li>
+      <li><strong>セグメンテーション</strong>（画像を領域に塗り分ける処理）:
+        色の違いを使って、ハブ（中心の円盤）とブレードを画素単位で分類します。</li>
+      <li><strong>数える:</strong> 重心（=回転中心）を求め、各部品の画素について
+        \(r_i^2\) を平均します。</li>
+    </ol>
+
+    <figure class="photo">
+      <img src="../assets/img/appendix/b1_segmentation.png" alt="セグメンテーション結果">
+      <figcaption>
+        図B-1: 実際のセグメンテーション結果。青=ブレード、黄=ハブ。右は
+        スケール較正用の定規。この塗り分けの画素を数えるだけで \(\langle r^2\rangle\)
+        が出る。
+      </figcaption>
+    </figure>
+
+    <h2>B.3 2つの仕上げ — 投影補正と、部品ごとの質量</h2>
+    <p>
+      <strong>投影補正:</strong> ブレードは取付角（ピッチ角）だけ傾いて付いているので、
+      真上からの写真では翼弦方向が \(\cos\)（取付角）だけ縮んで写ります。
+      刻印「1209」（直径 31 mm・ピッチ 0.9 インチ）から各半径の取付角を計算し、
+      画素の面積重みを補正します。
+    </p>
+    <p>
+      <strong>質量の割り当て:</strong> ハブとブレードは厚みが違うので、
+      「全体で一様」とは仮定せず、ハブ 0.140 g・ブレード 0.095 g（4枚合計）を
+      個別に秤量して、それぞれの \(\langle r^2\rangle\) に割り当てます。
+      ハブは中心付近にいるので \(r^2\) が小さく、慣性への寄与はわずか——
+      効くのはブレード、特に翼端側です。
+    </p>
+
+    <div class="note-box">
+      <strong>コラム — スライス法の +43% バグ:</strong> 最初の推定では、ブレードを
+      半径方向の短冊（スライス）に切って
+      \(\sum (w r^2 + w^3/12)\,\) 型の式で積んでいました。
+      ところが第2項 \(w^3/12\) は「まっすぐな棒を横に見たとき」の翼弦方向の
+      広がりの項で、<strong>回転軸まわりの環状スライスには不要</strong>です。
+      これを入れていたせいで +43% の過大評価になっていました。
+      画素直接積分は定義どおりの \(\int r^2 dA\) なので、この種の
+      「式の当てはめ間違い」が起きません。手法を変えて照合する価値はここにあります。
+    </div>
+
+    <h2>B.4 結果と照合</h2>
+    <ul>
+      <li>プロペラ: \(J_{prop} = 1.030\times10^{-8}\ \mathrm{kg\,m^2}\)（本法）</li>
+      <li>回転子（モータ内部）: \(J_{rotor} = 3.45\times10^{-9}\ \mathrm{kg\,m^2}\)
+        ——こちらはモータを分解し、コイルかご（外径6mm・肉厚0.65mm・高さ12.4mm の
+        コップ形状、総質量0.58g）の実測寸法から計算</li>
+      <li>合計 \(J_{mp} = 1.375\times10^{-8}\ \mathrm{kg\,m^2}\)。
+        付録Aのコーストダウン（\(J = C_Q \cdot (J/C_Q) = 1.37\times10^{-8}\)）と
+        <strong>独立な方法どうしで一致</strong>——ここまで来て初めて数字を信じられる</li>
+    </ul>
+
+    <p class="src">
+      データ: assets/IMG_3575.JPG（定規つき上面写真）。質量はデジタル秤で実測
+      （ハブ 0.140 g、ブレード 0.02375 g × 4）。
+      解析の再現: notes/calc/prop_inertia_photo.py（セグメンテーションと積分）、
+      notes/calc/rotor_inertia_specs.py（回転子）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="appendixA.html">← 付録A コーストダウン試験</a>
+      <a href="appendixC.html">付録C 電流を測らずに Ke を測る →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+</body>
+</html>

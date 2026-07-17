@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>付録D 2点吊り法 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.7rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    figure.diagram { margin: 1.5rem 0; text-align: center; }
+    figure.diagram svg { max-width: 100%; height: auto; }
+    figure.diagram figcaption { font-size: 0.8rem; color: var(--fg-muted); text-align: left; margin-top: 0.4rem; }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="number"] { width: 5.5rem; padding: 0.2rem 0.4rem; border: 1px solid var(--border); border-radius: 6px; background: var(--card-bg); color: var(--fg); }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.95rem; margin-top: 0.7rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 付録D（第4章の補足）</p>
+    <h1>2点吊り法</h1>
+    <p class="subtitle">紐2本とストップウォッチで機体の慣性モーメントを測る</p>
+  </header>
+
+  <main>
+    <p>
+      機体まるごとの慣性モーメント \(I_{xx}, I_{yy}, I_{zz}\) は、姿勢のダイナミクス
+      すべての分母に入る数字です。これを紐2本で測るのが2点吊り法
+      （バイファイラ振子）——古典的ですが、いまでも航空機やロケットの
+      実測に使われる現役の方法です。
+    </p>
+
+    <h2>D.1 原理 — 重力をバネにする</h2>
+
+    <figure class="diagram">
+      <svg viewBox="0 0 640 300" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="2点吊り法の図解" font-family="sans-serif">
+        <line x1="140" y1="30" x2="420" y2="30" stroke="currentColor" stroke-width="3"/>
+        <g stroke="currentColor" stroke-width="1">
+          <line x1="150" y1="30" x2="140" y2="18"/><line x1="190" y1="30" x2="180" y2="18"/>
+          <line x1="230" y1="30" x2="220" y2="18"/><line x1="270" y1="30" x2="260" y2="18"/>
+          <line x1="310" y1="30" x2="300" y2="18"/><line x1="350" y1="30" x2="340" y2="18"/>
+          <line x1="390" y1="30" x2="380" y2="18"/>
+        </g>
+        <line x1="220" y1="30" x2="220" y2="180" stroke="#0b5cad" stroke-width="2"/>
+        <line x1="340" y1="30" x2="340" y2="180" stroke="#0b5cad" stroke-width="2"/>
+        <line x1="430" y1="30" x2="430" y2="180" stroke="currentColor" stroke-width="1" stroke-dasharray="4 4"/>
+        <text x="440" y="110" font-size="16" fill="currentColor">紐の長さ L</text>
+        <rect x="185" y="180" width="190" height="14" rx="7" fill="currentColor"/>
+        <circle cx="280" cy="187" r="16" fill="#0b5cad"/>
+        <ellipse cx="205" cy="176" rx="30" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <ellipse cx="355" cy="176" rx="30" ry="5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+        <line x1="220" y1="215" x2="340" y2="215" stroke="currentColor" stroke-width="1"/>
+        <line x1="220" y1="209" x2="220" y2="221" stroke="currentColor" stroke-width="1"/>
+        <line x1="340" y1="209" x2="340" y2="221" stroke="currentColor" stroke-width="1"/>
+        <text x="255" y="235" font-size="16" fill="currentColor">吊り間隔 2b</text>
+        <path d="M 280 145 A 40 12 0 1 1 320 157" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <polygon points="320,157 308,155 314,146" fill="#c2373b"/>
+        <text x="150" y="140" font-size="16" fill="#c2373b">水平に少し捻って離す</text>
+        <text x="120" y="275" font-size="16" fill="currentColor">→ 捻り振動の周期 T を測って　I = m·g·b²·T² / (4π²·L)</text>
+      </svg>
+      <figcaption>
+        機体を同じ長さ \(L\) の紐2本で、間隔 \(2b\) で水平に吊る。測りたい軸が
+        鉛直（2本の紐の中央）を通る向きにするのがポイント。
+      </figcaption>
+    </figure>
+
+    <p>
+      機体を水平面内で小さな角度 \(\varphi\) だけ捻ると、紐の取り付け点が
+      水平に \(b\varphi\) ずれ、鉛直から \(b\varphi/L\) だけ傾いた紐の張力
+      （各 \(mg/2\)）に水平成分が生まれます。これが元に戻す向きのトルクになります:
+    </p>
+    <div class="math-scroll">
+    $$\tau = -2\cdot\frac{mg}{2}\cdot\frac{b\varphi}{L}\cdot b = -\frac{mgb^2}{L}\,\varphi
+      \qquad\Rightarrow\qquad
+      I\ddot{\varphi} = -\frac{mgb^2}{L}\,\varphi$$
+    </div>
+    <p>
+      重力が捻りバネの役をする単振動です。周期 \(T = 2\pi\sqrt{IL/(mgb^2)}\) を測れば:
+    </p>
+    <div class="math-scroll">
+    $$\boxed{\,I = \frac{m\,g\,b^2\,T^2}{4\pi^2 L}\,}$$
+    </div>
+
+    <h2>D.2 測り方のコツ</h2>
+    <ul>
+      <li><strong>捻り角は小さく</strong>（10°程度まで）: 導出は小角度近似です。</li>
+      <li><strong>周期は10周期まとめて</strong>測って割る: ストップウォッチの
+        反応時間の誤差が 1/10 になります。</li>
+      <li><strong>測りたい軸を鉛直に</strong>: ヨー軸（\(I_{zz}\)）は水平姿勢のまま、
+        ロール・ピッチ軸はその軸が鉛直になる向きに吊り替えます。</li>
+      <li>\(I \propto b^2 T^2 / L\) なので、\(b\) と \(T\) の測定誤差は2倍で効きます。
+        吊り間隔と周期こそ丁寧に。</li>
+      <li>横揺れ（振り子モード）が混ざったらやり直し。純粋な捻り振動だけを使います。</li>
+    </ul>
+
+    <h2>D.3 電卓 — 測ったらここに入れる</h2>
+    <div class="sim-panel">
+      <div class="sim-opts">
+        <label>質量 m [g]: <input type="number" id="calcM" value="36.8" step="0.1"></label>
+        <label>紐の長さ L [cm]: <input type="number" id="calcL" value="50" step="0.5"></label>
+        <label>吊り間隔の半分 b [cm]: <input type="number" id="calcB" value="4.0" step="0.1"></label>
+        <label>周期 T [s]: <input type="number" id="calcT" value="1.00" step="0.01"></label>
+      </div>
+      <div class="sim-readout" id="calcOut"></div>
+    </div>
+    <p class="src">
+      初期値の m はStampFly の実測質量。L・b・T は自分の吊り方に合わせて
+      入力してください（g = 9.81 m/s²）。
+    </p>
+
+    <h2>D.4 StampFly の結果と、平面機体ならではの検算</h2>
+    <table class="data-table">
+      <thead><tr><th>軸</th><th>\(I\) [kg·m²]</th></tr></thead>
+      <tbody>
+        <tr><td>ロール \(I_{xx}\)</td><td>\(9.16\times10^{-6}\)</td></tr>
+        <tr><td>ピッチ \(I_{yy}\)</td><td>\(13.3\times10^{-6}\)</td></tr>
+        <tr><td>ヨー \(I_{zz}\)</td><td>\(20.4\times10^{-6}\)</td></tr>
+      </tbody>
+    </table>
+
+    <div class="note-box">
+      <strong>検算 — 垂直軸の定理:</strong> 薄い平板なら
+      \(I_{zz} = I_{xx} + I_{yy}\) が厳密に成り立ちます（垂直軸の定理）。
+      StampFly は完全な平板ではありませんが、形はかなり平たい機体です。
+      実測で確かめると \(I_{xx} + I_{yy} = 22.5\times10^{-6}\) に対して
+      \(I_{zz} = 20.4\times10^{-6}\)——比 0.91。バッテリーやモータの
+      「厚み」の分だけ等号から下がる、という向きも含めて筋が通っています。
+      3つの独立な吊り測定が互いに矛盾していないことの、手軽で強力なチェックです。
+    </div>
+
+    <p class="src">
+      結果は測定者（開発者）による2点吊り実測値。周期などの生データは
+      本編制作時点では記録が残っていないため、追試の際はぜひ D.3 の電卓と
+      あわせて記録を残してほしい。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="appendixC.html">← 付録C 電流を測らずに Ke を測る</a>
+      <a href="../chapters/chapter04.html">第4章に戻る →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // bifilar pendulum calculator / 2点吊り電卓
+  (function () {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    function recalc() {
+      const m = Number($('calcM').value) * 1e-3;   // g -> kg
+      const L = Number($('calcL').value) * 1e-2;   // cm -> m
+      const b = Number($('calcB').value) * 1e-2;   // cm -> m
+      const T = Number($('calcT').value);          // s
+      if (!(m > 0 && L > 0 && b > 0 && T > 0)) {
+        $('calcOut').textContent = '正の値を入れてください';
+        return;
+      }
+      const I = m * 9.81 * b * b * T * T / (4 * Math.PI * Math.PI * L);
+      $('calcOut').textContent =
+        `I = m·g·b²·T² / (4π²·L) = ${I.toExponential(3)} kg·m²`;
+    }
+    ['calcM', 'calcL', 'calcB', 'calcT'].forEach(id => $(id).addEventListener('input', recalc));
+    recalc();
+  })();
+  </script>
+</body>
+</html>
