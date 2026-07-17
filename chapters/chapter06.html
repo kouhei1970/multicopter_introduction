@@ -87,7 +87,8 @@
     </div>
     <p>
       「回転数を 300 rad/s 上げろ」というステップ指令と、途中で入る負荷外乱
-      （プロペラが傷ついて負荷が増えた想定）に対して、P・I・D を効かせてみてください。
+      （プロペラが傷ついて負荷が増えた想定）に対して、まず P と I を効かせてみてください
+      （D の実験は 6.4 節で形を学んでから）。
     </p>
 
     <div class="sim-panel">
@@ -101,17 +102,13 @@
           <input type="range" id="rKi" min="0" max="60" value="0">
           <span id="rKiVal"></span>
         </label>
-        <label>\(K_d\):
-          <input type="range" id="rKd" min="0" max="20" value="0">
-          <span id="rKdVal"></span>
-        </label>
       </div>
       <div class="sim-readout" id="rolesReadout"></div>
     </div>
 
     <p class="src">
       条件: 目標 +300 rad/s のステップ（t=0.2s）、負荷外乱（t=1.5s、Duty −0.05 相当）。
-      D は測定値側・フィルタ付き（τf=4ms。理由は6.3〜6.4節）。飽和なし・ノイズなし。
+      制御は並列形の PI。飽和なし・ノイズなし。
     </p>
 
     <p>やってみると、教科書の1行ずつが体感になります:</p>
@@ -124,24 +121,7 @@
         最終的に勝ちます。</li>
       <li><strong>I を欲張る</strong> → 振動が始まります。過去の蓄積は急には
         止まれないからです（\(K_i\) を上げて確かめてください）。</li>
-      <li><strong>D を足す</strong> → 教科書どおりなら「振動が収まる」はず——ところが
-        <strong>悪化します</strong>（ぜひ確かめてください）。一次遅れのプラントでは、
-        測定値微分の D は回転数の変化そのものに逆らう「重り」として働き、
-        プラントを見かけ上遅くします。遅くなったプラントを I が急かすので、
-        振動はむしろ育つのです。</li>
     </ul>
-
-    <div class="note-box">
-      <strong>では D はいつ効くのか — カスケードとの再会:</strong>
-      「速度に逆らう力」が減衰として本領を発揮するのは、
-      トルク→角速度→角度のように<strong>積分が重なった系</strong>です。
-      前章の姿勢制御がまさにそれ——そして思い出してください、
-      あの<strong>内側レートループ</strong>こそ「測定した角速度に逆らう」構造でした。
-      外側 P ＋内側 P のカスケードは、展開すると角度誤差への P ＋角速度への
-      フィードバック、つまり <strong>PD 制御と等価</strong>です。カスケードとは
-      D 項の仕事を<strong>構造</strong>でやる方法であり、しかもジャイロが角速度を
-      直接くれるので、角度を微分してノイズと格闘する必要すらありません。
-      一方、一次遅れのモータには PI で十分——これも教科書の定番です。</div>
 
     <h2>6.3 理想微分は使えない — 不完全微分と η の意味</h2>
     <p>
@@ -191,6 +171,26 @@
       StampFly は <strong>P は偏差・D は測定値</strong>の PI-D 構成です
       （ソースコード pid.hpp で確認済み）。
     </p>
+    <p>
+      これで D を安全に試せる形が揃いました。ところが、6.5 節の教材で
+      このモータに D（測定値側）を入れてみると——教科書の期待に反して
+      <strong>応答は悪化します</strong>。一次遅れのプラントでは、回転数の変化に
+      逆らう D は「重り」として働き、プラントを見かけ上遅くするだけだからです
+      （実効時定数が \(\tau + K_m K_d\) に伸びる）。遅くなったプラントを
+      I が急かすので、振動はむしろ育ちます。
+    </p>
+
+    <div class="note-box">
+      <strong>では D はいつ効くのか — カスケードとの再会:</strong>
+      「速度に逆らう力」が減衰として本領を発揮するのは、
+      トルク→角速度→角度のように<strong>積分が重なった系</strong>です。
+      前章の姿勢制御がまさにそれ——そして思い出してください、
+      あの<strong>内側レートループ</strong>こそ「測定した角速度に逆らう」構造でした。
+      外側 P ＋内側 P のカスケードは、展開すると角度誤差への P ＋角速度への
+      フィードバック、つまり <strong>PD 制御と等価</strong>です。カスケードとは
+      D 項の仕事を<strong>構造</strong>でやる方法であり、しかもジャイロが角速度を
+      直接くれるので、角度を微分してノイズと格闘する必要すらありません。
+      一方、一次遅れのモータには PI で十分——これも教科書の定番です。</div>
 
     <h2>6.5 積分の実装 — 地味だが、いちばん事故る場所</h2>
     <p>
@@ -280,6 +280,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         測定値側に切り替えると消えます。回転数の応答はほぼ変わらないことにも注目。</li>
       <li><strong>ノイズ＋微分オン</strong> → Duty が毛羽立ちます。η を上げると
         毛羽立ちは減り（ゲイン上限 \(K_p/\eta\) が下がる）、微分の切れ味も鈍ります。</li>
+      <li><strong>小ステップで微分オン vs なし</strong> → 6.4 節で予告した「重り」効果。
+        D を入れた途端にオーバーシュートが現れます（なし 0.4% → 測定値D 22%）。
+        一次遅れに D は要らない、を数字で確認してください。</li>
     </ul>
 
     <h2>6.6 実機の実装を読む</h2>
@@ -451,11 +454,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
         ctx.clearRect(0, 0, cv.width, cv.height);
         const kp = Number($('rKp').value) * 1e-4;
         const ki = Number($('rKi').value) * 1e-2;
-        const kd = Number($('rKd').value) * 5e-5;   // 0〜1e-3
         $('rKpVal').textContent = kp.toExponential(1);
         $('rKiVal').textContent = ki.toFixed(2);
-        $('rKdVal').textContent = kd > 0 ? kd.toExponential(1) : '0';
-        const res = simulate({ kp, ki, kd, dMode: 'meas', tauF: 0.004, dt: 1e-5, ref: 300, dU: -0.05, tDist: 1.5 });
+        const res = simulate({ kp, ki, ref: 300, dU: -0.05, tDist: 1.5 });
         const x0 = 70, w = 660, h = 250, yMax = 450, tMax = 2.5;
         drawAxes(ctx, x0, 26, w, h, '0', String(yMax), '回転数変化 [rad/s]');
         // reference line / 目標線
@@ -480,7 +481,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           (ki === 0 ? `（P単独の理論値 r/(1+KpKm) = ${essTheory.toFixed(1)}）` : '') +
           ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
       }
-      ['rKp', 'rKi', 'rKd'].forEach(id => $(id).addEventListener('input', redraw));
+      ['rKp', 'rKi'].forEach(id => $(id).addEventListener('input', redraw));
       redraw();
     })();
 
