@@ -63,31 +63,32 @@
     </p>
 
     <figure class="diagram">
-      <svg viewBox="0 0 760 120" xmlns="http://www.w3.org/2000/svg" role="img"
+      <svg viewBox="0 0 780 130" xmlns="http://www.w3.org/2000/svg" role="img"
            aria-label="トルクから角度までの積分遅れの連鎖" font-family="sans-serif">
         <defs>
           <marker id="arr" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
             <polygon points="0,0 10,4 0,8" fill="currentColor"/>
           </marker>
         </defs>
-        <text x="40" y="66" font-size="17" fill="currentColor">トルク τ</text>
-        <line x1="122" y1="60" x2="176" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
-        <rect x="180" y="38" width="74" height="44" rx="8" fill="none" stroke="#2e8b57" stroke-width="2.5"/>
-        <text x="217" y="66" font-size="17" text-anchor="middle" fill="currentColor">1/I</text>
-        <text x="217" y="26" font-size="13" text-anchor="middle" fill="#2e8b57">即時</text>
-        <line x1="258" y1="60" x2="312" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
-        <text x="318" y="66" font-size="17" fill="currentColor">角加速度</text>
-        <line x1="392" y1="60" x2="446" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
-        <rect x="450" y="38" width="60" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
-        <text x="480" y="67" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
-        <text x="480" y="26" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 1</text>
-        <line x1="514" y1="60" x2="548" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
-        <text x="554" y="66" font-size="17" fill="currentColor">角速度</text>
-        <line x1="612" y1="60" x2="646" y2="60" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
-        <rect x="650" y="38" width="60" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
-        <text x="680" y="67" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
-        <text x="680" y="26" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 2</text>
-        <text x="680" y="108" font-size="17" text-anchor="middle" fill="currentColor">→ 角度</text>
+        <!-- signal labels sit above the lines, never on them / 信号名は線の上に置き線に重ねない -->
+        <line x1="20" y1="70" x2="148" y2="70" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="84" y="58" font-size="16" text-anchor="middle" fill="currentColor">トルク τ</text>
+        <rect x="150" y="48" width="64" height="44" rx="8" fill="none" stroke="#2e8b57" stroke-width="2.5"/>
+        <text x="182" y="76" font-size="16" text-anchor="middle" fill="currentColor">1/I</text>
+        <text x="182" y="36" font-size="13" text-anchor="middle" fill="#2e8b57">即時</text>
+        <line x1="214" y1="70" x2="330" y2="70" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="272" y="58" font-size="16" text-anchor="middle" fill="currentColor">角加速度</text>
+        <rect x="332" y="48" width="56" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <text x="360" y="78" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
+        <text x="360" y="36" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 1</text>
+        <line x1="388" y1="70" x2="504" y2="70" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="446" y="58" font-size="16" text-anchor="middle" fill="currentColor">角速度</text>
+        <rect x="506" y="48" width="56" height="44" rx="8" fill="none" stroke="#c2373b" stroke-width="2.5"/>
+        <text x="534" y="78" font-size="19" text-anchor="middle" fill="currentColor">∫</text>
+        <text x="534" y="36" font-size="13" text-anchor="middle" fill="#c2373b">遅れ 2</text>
+        <!-- output exits to the right / 出力は右へ矢印で抜ける -->
+        <line x1="562" y1="70" x2="756" y2="70" stroke="currentColor" stroke-width="2" marker-end="url(#arr)"/>
+        <text x="660" y="58" font-size="16" text-anchor="middle" fill="currentColor">角度</text>
       </svg>
       <figcaption>
         入力（トルク）から角度までは積分2回分の遅れ。角速度までなら1回分で済む。
@@ -119,61 +120,67 @@
     </p>
 
     <figure class="diagram">
-      <svg viewBox="0 0 760 210" xmlns="http://www.w3.org/2000/svg" role="img"
+      <svg viewBox="0 0 800 250" xmlns="http://www.w3.org/2000/svg" role="img"
            aria-label="カスケード制御のブロック線図" font-family="sans-serif">
         <defs>
           <marker id="arr2" markerWidth="10" markerHeight="8" refX="9" refY="4" orient="auto">
             <polygon points="0,0 10,4 0,8" fill="currentColor"/>
           </marker>
         </defs>
-        <!-- outer loop box / 外側ループの囲み -->
-        <rect x="120" y="20" width="620" height="150" rx="10" fill="none" stroke="#2e8b57" stroke-width="1.5" stroke-dasharray="6 4"/>
-        <text x="130" y="40" font-size="13" fill="#2e8b57">外側: 角度ループ（遅い・きっちり）</text>
-        <!-- inner loop box / 内側ループの囲み -->
-        <rect x="330" y="50" width="390" height="105" rx="10" fill="none" stroke="#c2373b" stroke-width="1.5" stroke-dasharray="6 4"/>
-        <text x="340" y="68" font-size="13" fill="#c2373b">内側: 角速度ループ（速い・早めの対処）＝これが「1」になる</text>
-        <!-- theta_ref -->
-        <text x="8" y="105" font-size="15" fill="currentColor">θ_ref</text>
-        <line x1="52" y1="100" x2="130" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <!-- outer sum -->
-        <circle cx="145" cy="100" r="13" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="139" y="105" font-size="14" fill="currentColor">＋</text>
-        <line x1="158" y1="100" x2="190" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <!-- angle ctrl -->
-        <rect x="193" y="78" width="90" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="238" y="98" font-size="14" text-anchor="middle" fill="currentColor">角度制御</text>
-        <text x="238" y="115" font-size="12" text-anchor="middle" fill="currentColor">P（＋I）</text>
-        <line x1="283" y1="100" x2="345" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <text x="292" y="92" font-size="13" fill="currentColor">r_cmd</text>
-        <!-- inner sum -->
-        <circle cx="360" cy="100" r="13" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="354" y="105" font-size="14" fill="currentColor">＋</text>
-        <line x1="373" y1="100" x2="400" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <!-- rate ctrl -->
-        <rect x="403" y="78" width="96" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="451" y="98" font-size="14" text-anchor="middle" fill="currentColor">角速度制御</text>
-        <text x="451" y="115" font-size="12" text-anchor="middle" fill="currentColor">PID</text>
-        <line x1="499" y1="100" x2="526" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <!-- motor+body -->
-        <rect x="529" y="78" width="104" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="581" y="98" font-size="14" text-anchor="middle" fill="currentColor">モータ＋機体</text>
-        <text x="581" y="115" font-size="12" text-anchor="middle" fill="currentColor">K/(s(τs+1))</text>
-        <line x1="633" y1="100" x2="672" y2="100" stroke="currentColor" stroke-width="2"/>
-        <text x="676" y="105" font-size="15" fill="currentColor">r</text>
-        <!-- gyro feedback (inner) -->
-        <line x1="662" y1="100" x2="662" y2="140" stroke="currentColor" stroke-width="2"/>
-        <line x1="662" y1="140" x2="360" y2="140" stroke="currentColor" stroke-width="2"/>
-        <line x1="360" y1="140" x2="360" y2="113" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <text x="500" y="135" font-size="12" fill="currentColor">ジャイロ（角速度を直接・即座に測れる）−</text>
-        <!-- integrator to angle -->
-        <line x1="692" y1="100" x2="712" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <rect x="714" y="82" width="36" height="36" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
-        <text x="732" y="107" font-size="17" text-anchor="middle" fill="currentColor">∫</text>
-        <!-- angle feedback (outer) -->
-        <line x1="732" y1="118" x2="732" y2="190" stroke="currentColor" stroke-width="2"/>
-        <line x1="732" y1="190" x2="145" y2="190" stroke="currentColor" stroke-width="2"/>
-        <line x1="145" y1="190" x2="145" y2="113" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
-        <text x="330" y="185" font-size="12" fill="currentColor">姿勢推定（角度 θ は推定フィルタ経由）−</text>
+        <!-- group boxes / ループの囲み（信号線・文字と重ならない位置） -->
+        <rect x="108" y="30" width="652" height="192" rx="10" fill="none" stroke="#2e8b57" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text x="116" y="48" font-size="12" fill="#2e8b57">外側: 角度ループ（遅い・きっちり）</text>
+        <rect x="330" y="56" width="326" height="134" rx="10" fill="none" stroke="#c2373b" stroke-width="1.5" stroke-dasharray="6 4"/>
+        <text x="338" y="72" font-size="12" fill="#c2373b">内側: 角速度ループ（速い）＝これが「1」になる</text>
+        <!-- input / 入力（ラベルは線の左、線に重ねない） -->
+        <text x="6" y="105" font-size="15" fill="currentColor">θ_ref</text>
+        <line x1="52" y1="100" x2="136" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- outer summing junction / 外側の加え合わせ点（左矢印の上に＋・下矢印の右に−） -->
+        <circle cx="150" cy="100" r="12" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="122" y="91" font-size="15" text-anchor="middle" fill="currentColor">＋</text>
+        <line x1="150" y1="196" x2="150" y2="114" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="163" y="136" font-size="15" fill="currentColor">−</text>
+        <line x1="162" y1="100" x2="184" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- angle ctrl / 角度制御 -->
+        <rect x="186" y="76" width="92" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="232" y="97" font-size="14" text-anchor="middle" fill="currentColor">角度制御</text>
+        <text x="232" y="115" font-size="12" text-anchor="middle" fill="currentColor">P（＋I）</text>
+        <line x1="278" y1="100" x2="341" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="304" y="89" font-size="13" text-anchor="middle" fill="currentColor">r_cmd</text>
+        <!-- inner summing junction / 内側の加え合わせ点 -->
+        <circle cx="355" cy="100" r="12" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="334" y="91" font-size="15" text-anchor="middle" fill="currentColor">＋</text>
+        <line x1="355" y1="167" x2="355" y2="114" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <text x="368" y="136" font-size="15" fill="currentColor">−</text>
+        <line x1="367" y1="100" x2="396" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- rate ctrl / 角速度制御 -->
+        <rect x="398" y="76" width="100" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="448" y="97" font-size="14" text-anchor="middle" fill="currentColor">角速度制御</text>
+        <text x="448" y="115" font-size="12" text-anchor="middle" fill="currentColor">PID</text>
+        <line x1="498" y1="100" x2="520" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <!-- motor + body / モータ＋機体 -->
+        <rect x="522" y="76" width="104" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="574" y="97" font-size="14" text-anchor="middle" fill="currentColor">モータ＋機体</text>
+        <text x="574" y="115" font-size="11" text-anchor="middle" fill="currentColor">K/(s(τs+1))</text>
+        <!-- r line with branch dot / r の信号線（分岐点は黒丸） -->
+        <line x1="626" y1="100" x2="668" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <circle cx="644" cy="100" r="2.6" fill="currentColor"/>
+        <text x="634" y="90" font-size="15" fill="currentColor">r</text>
+        <!-- integrator / 積分器 -->
+        <rect x="670" y="80" width="44" height="40" rx="8" fill="none" stroke="currentColor" stroke-width="2"/>
+        <text x="692" y="106" font-size="15" text-anchor="middle" fill="currentColor">1/s</text>
+        <!-- output exits right, feedback taps at branch dot / 出力は右へ抜け、分岐点から帰還 -->
+        <line x1="714" y1="100" x2="782" y2="100" stroke="currentColor" stroke-width="2" marker-end="url(#arr2)"/>
+        <circle cx="740" cy="100" r="2.6" fill="currentColor"/>
+        <text x="764" y="90" font-size="15" fill="currentColor">θ</text>
+        <!-- rate feedback / 角速度の帰還（分岐点→内側加え合わせ点） -->
+        <line x1="644" y1="100" x2="644" y2="167" stroke="currentColor" stroke-width="2"/>
+        <line x1="644" y1="167" x2="355" y2="167" stroke="currentColor" stroke-width="2"/>
+        <text x="500" y="183" font-size="11.5" text-anchor="middle" fill="currentColor">ジャイロ（角速度を直接・即座に測る）</text>
+        <!-- angle feedback / 角度の帰還（出力線の分岐点→外側加え合わせ点） -->
+        <line x1="740" y1="100" x2="740" y2="196" stroke="currentColor" stroke-width="2"/>
+        <line x1="740" y1="196" x2="150" y2="196" stroke="currentColor" stroke-width="2"/>
+        <text x="445" y="212" font-size="11.5" text-anchor="middle" fill="currentColor">姿勢推定（角度は推定フィルタ経由・第7章）</text>
       </svg>
       <figcaption>
         カスケード制御のブロック線図。内側（角速度）ループはジャイロの速い測定で
