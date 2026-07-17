@@ -29,6 +29,12 @@
     .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
     .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
     .sim-opts input[type="range"] { width: 9rem; }
+    .sim-opts button.sim-reset {
+      margin-left: auto; font-size: 0.8rem; padding: 0.25rem 0.7rem;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card-bg); color: var(--fg); cursor: pointer;
+    }
+    .sim-opts button.sim-reset:hover { background: var(--accent-soft); }
     .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
     nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
   </style>
@@ -108,6 +114,7 @@
           <input type="range" id="rKd" min="0" max="20" value="0">
           <span id="rKdVal"></span>
         </label>
+        <button type="button" class="sim-reset" id="rolesReset">初期値に戻す</button>
       </div>
       <div class="sim-readout" id="rolesReadout"></div>
     </div>
@@ -190,6 +197,7 @@
           <span id="ibEtaVal"></span>
         </label>
         <label><input type="checkbox" id="ibNoise"> 計測ノイズ（σ=3 rad/s）</label>
+        <button type="button" class="sim-reset" id="incompReset">初期値に戻す</button>
       </div>
       <div class="sim-readout" id="incompReadout"></div>
     </div>
@@ -378,6 +386,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           <input type="range" id="tcTd" min="0" max="20" value="0">
           <span id="tcTdVal"></span>
         </label>
+        <button type="button" class="sim-reset" id="tcReset">初期値に戻す</button>
       </div>
       <div class="sim-readout" id="tcReadout"></div>
     </div>
@@ -430,6 +439,7 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           <input type="range" id="rlTd" min="0" max="30" value="10">
           <span id="rlTdVal"></span>
         </label>
+        <button type="button" class="sim-reset" id="rlReset">実機値に戻す</button>
       </div>
       <div class="sim-readout" id="rlReadout"></div>
     </div>
@@ -660,6 +670,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
             ` | 最終誤差 ${res.eEnd.toFixed(1)} rad/s | オーバーシュート ${res.os.toFixed(1)} %`;
       }
       ['rKp', 'rKi', 'rKd'].forEach(id => $(id).addEventListener('input', redraw));
+      $('rolesReset').addEventListener('click', () => {
+        $('rKp').value = '10'; $('rKi').value = '0'; $('rKd').value = '0'; redraw();
+      });
       redraw();
     })();
 
@@ -714,6 +727,10 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
       }
       ['ibKp', 'ibKi', 'ibKd', 'ibEta'].forEach(id => $(id).addEventListener('input', redraw));
       $('ibNoise').addEventListener('change', redraw);
+      $('incompReset').addEventListener('click', () => {
+        $('ibKp').value = '10'; $('ibKi').value = '20'; $('ibKd').value = '20';
+        $('ibEta').value = '13'; $('ibNoise').checked = false; redraw();
+      });
       redraw();
     })();
 
@@ -842,6 +859,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
           `オーバーシュート ${res.os.toFixed(1)} % | 最終誤差 ${res.eEnd.toFixed(1)} rad/s`;
       }
       ['tcKp', 'tcTi', 'tcTd'].forEach(id => $(id).addEventListener('input', redraw));
+      $('tcReset').addEventListener('click', () => {
+        $('tcKp').value = '10'; $('tcTi').value = '50'; $('tcTd').value = '0'; redraw();
+      });
       redraw();
     })();
 
@@ -919,6 +939,9 @@ integral += 0.5f * (e + e_prev) * dt;</pre>
               ? ' | ← 実機の飛行実績ゲイン' : '');
       }
       ['rlKp', 'rlTi', 'rlTd'].forEach(id => $(id).addEventListener('input', redraw));
+      $('rlReset').addEventListener('click', () => {
+        $('rlKp').value = '98'; $('rlTi').value = '7'; $('rlTd').value = '10'; redraw();
+      });
       redraw();
     })();
   })();
