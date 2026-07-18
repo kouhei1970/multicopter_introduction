@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="マルチコプタ制御入門">
+  <meta property="og:title" content="第7章 ループ整形 | マルチコプタ制御入門">
+  <meta property="og:description" content="手のひらサイズのドローン StampFly の実測データで学ぶマルチコプタ制御。ブラウザで動くシミュレーションで、教科書の式から実機の運転まで。">
+  <meta property="og:url" content="https://kouhei1970.github.io/multicopter_introduction/chapters/chapter07.html">
+  <meta property="og:image" content="https://kouhei1970.github.io/multicopter_introduction/assets/img/ogp.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>第7章 ループ整形 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.7rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 9rem; }
+    .sim-opts button.sim-reset {
+      margin-left: auto; font-size: 0.8rem; padding: 0.25rem 0.7rem;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card-bg); color: var(--fg); cursor: pointer;
+    }
+    .sim-opts button.sim-reset:hover { background: var(--accent-soft); }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第7章</p>
+    <h1>ループ整形</h1>
+    <p class="subtitle">位相余裕と交差周波数 — むだ時間の正体と、崖の種明かし</p>
+  </header>
+
+  <main>
+    <p>
+      第5章の2次系近似設計は「\(\zeta\) を選べば終わり」の明快さが魅力でした。
+      しかし、むだ時間はずっと近似の外に置かれたまま——攻めると突然現れる「崖」の
+      正体も、時間領域の言葉ではうまく説明できませんでした。
+      この章では視点を<strong>周波数領域</strong>に移します。
+      安全マージンを直接測って、指定して設計する——それが<strong>ループ整形</strong>です。
+      実機 StampFly に載っている自動チューナも、この流儀で書かれています。
+    </p>
+
+    <h2>7.1 開ループという見方 — 安全マージンを測る</h2>
+    <p>
+      フィードバック系の安定性は、ループを一周する伝達関数
+      \(L(s) = C(s)G(s)\)（開ループ）で決まります。閉ループが発振する条件は、
+      ループ一周の信号が「大きさそのまま・位相がちょうど反転」で戻ってくること——
+      すなわち \(L(j\omega) = -1\) です。だから設計の関心事は、
+      <strong>\(L(j\omega)\) が \(-1\) にどれだけ近づくか</strong>に尽きます。
+      距離の測り方が2つあります:
+    </p>
+    <ul>
+      <li><strong>位相余裕（PM）</strong>: ループゲインが1になる周波数
+        （<strong>交差周波数</strong> \(\omega_c\)）で、位相が \(-180°\) まで
+        あと何度残っているか。「発振まであと何度か」という安全マージン。</li>
+      <li><strong>ゲイン余裕（GM）</strong>: 位相が \(-180°\) に達する周波数で、
+        ゲインが1まであと何倍（dB）余裕があるか。</li>
+    </ul>
+    <p>
+      経験則の目安は<strong>位相余裕 60° 以上</strong>。ドローンでもこの目安は
+      経験上有効です。そして交差周波数 \(\omega_c\) は応答の速さそのもの——
+      高いほど機敏ですが、後で見るようにむだ時間の「家賃」が高くつく。
+      <strong>性能と安定性のトレードオフを、\(\omega_c\) と PM という2つの数字で
+      直接指定する</strong>のがループ整形の設計です。
+    </p>
+
+    <h2>7.2 位相予算の家計簿</h2>
+    <p>
+      交差周波数での位相を、収支表として書いてみます。持ち点は \(180°\)。
+      そこから各要素が位相を「支出」していき、残った分が位相余裕です。
+      第4〜5章で同定したロール・レートループなら:
+    </p>
+    <div class="math-scroll">
+    $$\mathrm{PM} = 180°
+      \underbrace{- 90°}_{\text{機体の積分器}}
+      \underbrace{- \tan^{-1}(\tau_m \omega_c)}_{\text{モータ遅れ}}
+      \underbrace{- 57.3° \cdot \omega_c L}_{\text{むだ時間}}
+      \underbrace{- \tan^{-1}\tfrac{1}{T_i \omega_c}}_{\text{積分項}}
+      \underbrace{+ \phi_D(\omega_c)}_{\text{Dの位相進み}}$$
+    </div>
+    <p>
+      家計簿の肝は<strong>むだ時間の項だけが \(\omega_c\) に比例する</strong>ことです。
+      モータ遅れの \(\tan^{-1}\) は 90° で頭打ちになりますが、むだ時間の支出は
+      交差を上げるほど際限なく増える——たとえば \(L=12\) ms なら、
+      \(\omega_c=25\) rad/s で 17°、76 rad/s なら 52°。
+      <strong>「交差周波数はプラントの帯域（とむだ時間）で決まる」</strong>という
+      設計則の正体はこの一行です。
+    </p>
+
+    <h2>7.3 触って確かめる — ボード線図の上でゲインを動かす</h2>
+    <p>
+      下の教材は、同定済みロール・レートプラントに PID を掛けた開ループ
+      \(L(j\omega)\) のボード線図（ゲインと位相を周波数で並べた図）です。
+      初期値は実機の飛行実績ゲイン。\(K_p\) を上げると交差が右へ動いて
+      PM が減る、\(T_d\) がリードの山で位相を返す、むだ時間 \(L\) が
+      高周波の位相をまっすぐ食い落とす——全部この1枚で見えます。
+      読み出しには位相予算の内訳も出ます。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="bodeCanvas" width="760" height="480"></canvas>
+      <div class="sim-opts">
+        <label>\(K_p\) [N·m/(rad/s)]:
+          <input type="range" id="bdKp" min="20" max="300" value="98">
+          <span id="bdKpVal"></span>
+        </label>
+        <label>\(T_i\) [s]:
+          <input type="range" id="bdTi" min="1" max="20" value="7">
+          <span id="bdTiVal"></span>
+        </label>
+        <label>\(T_d\) [ms]:
+          <input type="range" id="bdTd" min="0" max="30" value="10">
+          <span id="bdTdVal"></span>
+        </label>
+        <label>むだ時間 L:
+          <select id="bdL">
+            <option value="0">0 ms（理想）</option>
+            <option value="0.005">5 ms</option>
+            <option value="0.012" selected>12 ms（実測級）</option>
+          </select>
+        </label>
+        <button type="button" class="sim-reset" id="bdReset">実機値に戻す</button>
+      </div>
+      <div class="sim-readout" id="bdReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: プラントは第4〜5章の同定値（\(I_{xx}=9.16\times10^{-6}\)、
+      \(\tau_m=20\) ms）。制御器は実装の形（PI-D・\(\eta=0.125\)）。
+      上段=|L| [dB]、下段=∠L [°]。縦の点線が交差周波数、−180° 線との差が位相余裕。
+    </p>
+
+    <h2>7.4 第5章の「崖」の種明かし</h2>
+    <p>
+      第5章 5.4 節で、外側ループを攻めると突然発散する「崖」を見ました。
+      いまなら一行で説明できます。<strong>ゲインを上げる＝交差周波数を上げる。
+      むだ時間の支出は交差に比例して増える。だからどこかで位相余裕が尽きる</strong>——
+      そして PM が 0° を切った瞬間が崖です。理想（\(L=0\)）で崖が現れなかったのは、
+      支出が頭打ちのモータ遅れだけだったから。1/3 則とは、
+      「むだ時間の家賃が安い低層階に住む」という知恵だったわけです。
+      上の教材で \(L=12\) ms にして \(K_p\) を上げ、PM が溶けて 0 に触れる瞬間を
+      確かめてください。
+    </p>
+
+    <h2>7.5 実機の自動チューナを読む — 設計則はコードにある</h2>
+    <p>
+      StampFly には、この章の内容がそのままコードになった<strong>オンボード自動チューナ</strong>が
+      載っています（CLI から <code>autotune roll</code> 一発）。中身は:
+    </p>
+    <ol>
+      <li><strong>同定:</strong> 飛行中にステップドサイン（周波数を階段状に変えた
+        正弦波）で機体を揺すり、レートプラント \(b\,e^{-Ls}/(s(Ts+1))\) の
+        3パラメータを当てはめる。</li>
+      <li><strong>設計:</strong> 仕様は<strong>交差周波数と位相余裕</strong>で指定。
+        既定は <strong>PM = 60°</strong>、\(\omega_c\) = 25 rad/s（ロール・ピッチ）/
+        18 rad/s（ヨー——操縦権限が小さく同定の SN 比も低いため保守的に）。
+        \(T_i = 10/\omega_c\)（積分の支出を交差の1桁下に置く——第5章の位相コストの
+        話と同じ流儀）、\(T_d\) は位相条件を二分法で解き、\(K_p\) は振幅条件
+        \(|L(j\omega_c)|=1\) から決める。</li>
+      <li><strong>検収:</strong> 設計後に数値検証し、PM 不足・ゲイン余裕不足・
+        物理範囲外なら理由コードつきで<strong>棄却</strong>する。</li>
+    </ol>
+    <p>
+      仕様が「ゲインの値」ではなく「余裕」で書かれていることに注目してください。
+      モデルが多少ずれても、余裕という<strong>安全在庫</strong>で受け止める——
+      これがループ整形の思想です。
+    </p>
+
+    <h2>7.6 60° 設計 vs 実飛行ゲイン — 頑健さの値段、速さの値段</h2>
+    <p>
+      では、実際に飛んでいるゲイン（手動の試行錯誤で磨かれた値）は
+      どんな余裕を持っているのでしょうか。同定モデルで勘定すると:
+    </p>
+    <table class="data-table">
+      <thead><tr><th>むだ時間 L</th><th>交差 \(\omega_c\)</th><th>位相余裕</th><th>ゲイン余裕</th></tr></thead>
+      <tbody>
+        <tr><td>0 ms</td><td>76 rad/s</td><td><strong>67.8°</strong></td><td>—</td></tr>
+        <tr><td>5 ms</td><td>76 rad/s</td><td>46.0°</td><td>11.5 dB</td></tr>
+        <tr><td>12 ms</td><td>76 rad/s</td><td><strong>15.4°</strong></td><td>2.8 dB</td></tr>
+      </tbody>
+      <caption style="caption-side: bottom; font-size: 0.8rem; color: var(--fg-muted); text-align: left; padding-top: 0.4rem;">
+        実飛行ゲイン（roll: \(K_p=9.76\times10^{-4}, T_i=0.7, T_d=0.01\)）の余裕勘定。
+        むだ時間ゼロのモデル上ではちょうど 60° 指針を満たし、むだ時間がそれを食っていく。
+      </caption>
+    </table>
+    <p>
+      興味深いことに、実飛行ゲインは<strong>むだ時間を除いたモデル上でほぼ 60°</strong>を
+      満たしています。問題は「レートループが実際に見るむだ時間はいくつか」——
+      12 ms（acro 飛行同定の値）が全部ループ内にいるなら PM 15° の綱渡り、
+      一部がループ外なら余裕はもっとある。実は<strong>この観点での検証はまだ
+      足りていません</strong>。下の実験で、両者の性格の違いを見てください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="cmpCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label>むだ時間 L [ms]:
+          <input type="range" id="cmpL" min="0" max="15" value="12">
+          <span id="cmpLVal"></span>
+        </label>
+        <button type="button" class="sim-reset" id="cmpReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="cmpReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: ロールレート指令 +3 rad/s のステップ。赤=実飛行ゲイン、
+      青=自動チューナ既定仕様の設計解（\(\omega_c\)=25 rad/s・PM=60°・L=12ms 前提で
+      本文のアルゴリズムを解いた \(K_p=2.45\times10^{-4}, T_i=0.4, T_d=0.014\)）。
+      むだ時間スライダーは「モデルのむだ時間が想定からずれたら」の実験。
+    </p>
+
+    <ul>
+      <li><strong>実飛行ゲインは速いが、むだ時間に脆い</strong>: L を 0→15 ms へ
+        動かすと行き過ぎ 6% → 84%。想定が当たれば俊敏、外れれば振動的。</li>
+      <li><strong>60° 設計は遅いが、崩れない</strong>: 同じ範囲で 10〜16% のまま。
+        余裕という安全在庫が、モデルのずれを吸収している。</li>
+    </ul>
+
+    <div class="note-box">
+      <strong>正直な現状 — 理論と実機の溝:</strong>
+      実は StampFly では、自動チューナのゲインで飛ばすと振動的な挙動が見られ、
+      現状は<strong>手動で試行錯誤した値のほうが良い</strong>結果になっています。
+      60° を狙った設計が実機で振動する——同定の質か、振動などモデル外の
+      ダイナミクスか、むだ時間の見積もりか。原因はまだ特定できておらず、
+      理論で追い込みたい課題として残っています。
+      それでもループ整形を学ぶ価値は減りません。
+      <strong>モデルに不確かさがある中で、「最低限成立するところ」まで根拠を
+      持って追い込める</strong>——手動調整の結果を「余裕いくつの場所にいるのか」と
+      地図の上で語れるだけでも、試行錯誤は当てずっぽうでなくなるのです。
+    </div>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>ループ整形は \(L(j\omega)=C\,G\) が \(-1\) にどれだけ近いかを測り、
+        <strong>交差周波数（速さ）と位相余裕（安全在庫）で直接設計する</strong>流儀。
+        目安は PM 60° 以上、\(\omega_c\) はプラント帯域とのトレードオフ。</li>
+      <li>位相は家計簿で読める: 積分器 90°、モータ \(\tan^{-1}(\tau_m\omega)\)、
+        そして<strong>むだ時間だけが \(\omega_c\) に比例して支出を増やす</strong>。
+        第5章の崖 = PM が尽きた場所。1/3 則 = 家賃の安い低層階。</li>
+      <li>実機の自動チューナは「同定 → \(\omega_c\)/PM 指定の設計 → 検収・棄却」を
+        オンボードで実装（既定 60°、25/18 rad/s、\(T_i=10/\omega_c\)）。</li>
+      <li>実飛行ゲインはむだ時間抜きモデルで 68°、L=12ms なら 15°——速いが脆い。
+        60° 設計は遅いが L のずれに崩れない。<strong>そして実機では手動値が
+        まだ勝っている——理論と実機の溝は、これからの宿題</strong>。</li>
+    </ul>
+    <p>
+      ここまでで、姿勢と高度の制御・その設計法・実装の作法が揃いました。
+      次章（第8章 高度の制御）は執筆済みです——まだの方はそちらへ。
+      その先は、制御が信じている「測定値」の正体——センサと状態推定の世界です。
+    </p>
+
+    <p class="src">
+      本章の対話記録: notes/qa_log.md の Q6-1〜Q6-3。実機実装の出典:
+      stampfly_ecosystem firmware/vehicle（sf_autotune/autotune.cpp・api_task.cpp の
+      autotune コマンド既定値）。余裕勘定・設計解・閉ループ比較は同定モデルによる
+      本章の計算（プラント: \(b\,e^{-Ls}/(s(Ts+1))\)、第4〜5章の実測値）。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter06.html">← 第6章 PID制御の道具箱</a>
+      <a href="chapter08.html">第8章 高度の制御 →</a>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    <p><a href="../index.html">← 表紙（目次）へ戻る</a></p>
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Chapter 7 sims: loop shaping on the identified roll-rate plant
+  // 第7章教材: 同定済みロールレートプラントのループ整形
+  //   L(jw) = C(jw)·G(jw),  G = (1/Ixx)·e^{-Ls}/(s(τm s+1)),  C = PI-D
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const IXX = 9.16e-6, TAUM = 0.02, ETA = 0.125;
+    const $ = id => document.getElementById(id);
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+
+    // open-loop frequency response / 開ループ周波数応答
+    function Lresp(w, kp, ti, td, L) {
+      // C_unit = 1 + 1/(jw ti) + td jw/(η td jw + 1)
+      let cr = 1, ci = -1 / (w * ti);
+      if (td > 0) {
+        const dr = 1, di = ETA * td * w, den = dr * dr + di * di;
+        cr += (td * w * di) / den;
+        ci += (td * w * dr) / den;
+      }
+      // G = (1/Ixx)/(jw(τ jw+1)) e^{-jwL}
+      let gr = 0, gi = -1 / (IXX * w);
+      const dr2 = 1, di2 = TAUM * w, den2 = dr2 * dr2 + di2 * di2;
+      let g1 = (gr * dr2 + gi * di2) / den2, g2 = (gi * dr2 - gr * di2) / den2;
+      const ph = -w * L, c = Math.cos(ph), s = Math.sin(ph);
+      gr = g1 * c - g2 * s; gi = g1 * s + g2 * c;
+      const re = kp * (cr * gr - ci * gi), im = kp * (cr * gi + ci * gr);
+      return [re, im];
+    }
+
+    function sweep(kp, ti, td, L) {
+      const ws = [], mags = [], phs = [];
+      let wc = 0, pm = 0, gm = null, prev = null;
+      for (let lw = 0; lw <= Math.log10(500); lw += 0.004) {
+        const w = Math.pow(10, lw);
+        const [re, im] = Lresp(w, kp, ti, td, L);
+        const mag = Math.hypot(re, im);
+        let ph = Math.atan2(im, re) * 180 / Math.PI;
+        if (ph > 0) ph -= 360;                     // -90..-270 帯へ / into the lag band
+        ws.push(w); mags.push(20 * Math.log10(mag)); phs.push(ph);
+        if (prev && prev.mag >= 1 && mag < 1) { wc = w; pm = 180 + ph; }
+        if (prev && prev.ph > -180 && ph <= -180 && gm === null && mag < 1)
+          gm = -20 * Math.log10(mag);
+        prev = { mag, ph };
+      }
+      return { ws, mags, phs, wc, pm, gm };
+    }
+
+    // ---------- 7.3 interactive Bode / ボード線図 ----------
+    (function () {
+      const cv = $('bodeCanvas'), ctx = cv.getContext('2d');
+      const W0 = 1, W1 = 500;
+      const xOf = w => 70 + (Math.log10(w) - Math.log10(W0)) / (Math.log10(W1) - Math.log10(W0)) * 660;
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kp = Number($('bdKp').value) * 1e-5;
+        const ti = Number($('bdTi').value) * 0.1;
+        const td = Number($('bdTd').value) * 1e-3;
+        const L = Number($('bdL').value);
+        $('bdKpVal').textContent = kp.toExponential(2);
+        $('bdTiVal').textContent = ti.toFixed(1);
+        $('bdTdVal').textContent = (td * 1e3).toFixed(0);
+        const r = sweep(kp, ti, td, L);
+        const x0 = 70, w = 660;
+        // --- top: |L| dB ---
+        const yT = 24, hT = 190, gMin = -40, gMax = 60;
+        ctx.strokeStyle = c.border; ctx.strokeRect(x0, yT, w, hT);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(String(gMax), x0 - 6, yT + 10);
+        ctx.fillText(String(gMin), x0 - 6, yT + hT);
+        ctx.save(); ctx.translate(x0 - 44, yT + hT / 2); ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center'; ctx.fillText('|L| [dB]', 0, 0); ctx.restore();
+        const y0dB = yT + hT * (gMax / (gMax - gMin));
+        ctx.setLineDash([2, 3]);
+        ctx.beginPath(); ctx.moveTo(x0, y0dB); ctx.lineTo(x0 + w, y0dB); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.textAlign = 'left'; ctx.fillText('0 dB', x0 + 4, y0dB - 4);
+        ctx.strokeStyle = c.accent; ctx.lineWidth = 2.2; ctx.beginPath();
+        r.ws.forEach((wv, i) => {
+          const x = xOf(wv);
+          const y = yT + hT * ((gMax - Math.max(gMin, Math.min(gMax, r.mags[i]))) / (gMax - gMin));
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        // --- bottom: phase ---
+        const yB = 246, hB = 190, pMin = -270, pMax = -60;
+        ctx.strokeStyle = c.border; ctx.lineWidth = 1; ctx.strokeRect(x0, yB, w, hB);
+        ctx.fillStyle = c.muted; ctx.textAlign = 'right';
+        ctx.fillText(String(pMax), x0 - 6, yB + 10);
+        ctx.fillText(String(pMin), x0 - 6, yB + hB);
+        ctx.save(); ctx.translate(x0 - 44, yB + hB / 2); ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center'; ctx.fillText('∠L [°]', 0, 0); ctx.restore();
+        const y180 = yB + hB * ((pMax - (-180)) / (pMax - pMin));
+        ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(x0, y180); ctx.lineTo(x0 + w, y180); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = '#c2373b'; ctx.textAlign = 'left'; ctx.fillText('−180°', x0 + 4, y180 - 4);
+        ctx.strokeStyle = c.accent; ctx.lineWidth = 2.2; ctx.beginPath();
+        r.ws.forEach((wv, i) => {
+          const x = xOf(wv);
+          const y = yB + hB * ((pMax - Math.max(pMin, Math.min(pMax, r.phs[i]))) / (pMax - pMin));
+          i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+        });
+        ctx.stroke();
+        // crossover marker / 交差マーカー
+        if (r.wc > 0) {
+          const xc = xOf(r.wc);
+          ctx.strokeStyle = c.fg; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.moveTo(xc, yT); ctx.lineTo(xc, yB + hB); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = c.fg; ctx.textAlign = 'left'; ctx.font = '12px sans-serif';
+          ctx.fillText('ωc', xc + 4, yT + 14);
+        }
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center'; ctx.font = '11px sans-serif';
+        ctx.fillText('周波数 [rad/s]（対数軸: 1 〜 500）', x0 + w / 2, yB + hB + 16);
+        // budget readout / 位相予算の内訳
+        const wcv = r.wc;
+        const mot = Math.atan(TAUM * wcv) * 180 / Math.PI;
+        const dead = wcv * L * 180 / Math.PI;
+        const ilag = Math.atan(1 / (ti * wcv)) * 180 / Math.PI;
+        const dlead = td > 0
+          ? (Math.atan(td * wcv) - Math.atan(ETA * td * wcv)) * 180 / Math.PI : 0;
+        $('bdReadout').textContent = r.wc > 0
+          ? `ωc = ${wcv.toFixed(1)} rad/s | PM = ${r.pm.toFixed(1)}°` +
+            (r.gm !== null ? ` | GM = ${r.gm.toFixed(1)} dB` : '') +
+            ` | 家計簿: 180 − 90(積分器) − ${mot.toFixed(0)}(モータ) − ${dead.toFixed(0)}(むだ時間)` +
+            ` − ${ilag.toFixed(0)}(積分項) + ${dlead.toFixed(0)}(D) = ${r.pm.toFixed(0)}°` +
+            (r.pm <= 0 ? ' ← 発振！' : '')
+          : '交差なし（ゲイン不足）';
+      }
+      ['bdKp', 'bdTi', 'bdTd'].forEach(id => $(id).addEventListener('input', redraw));
+      $('bdL').addEventListener('change', redraw);
+      $('bdReset').addEventListener('click', () => {
+        $('bdKp').value = '98'; $('bdTi').value = '7'; $('bdTd').value = '10';
+        $('bdL').value = '0.012'; redraw();
+      });
+      redraw();
+    })();
+
+    // ---------- 7.6 flight gains vs 60° design / 実飛行 vs 設計解 ----------
+    (function () {
+      const cv = $('cmpCanvas'), ctx = cv.getContext('2d');
+      const DT = 1e-4;
+      // 60°設計解（wc=25, PM=60, L=12ms 前提で本文のアルゴリズムを解いた値）
+      const DES = { kp: 2.45e-4, ti: 0.4, td: 0.014 };
+      const FLT = { kp: 9.76e-4, ti: 0.7, td: 0.01 };
+      function simRate(g, L) {
+        const tEnd = 1.0, n = Math.round(tEnd / DT), nd = Math.max(1, Math.round(L / DT));
+        const ub = new Float64Array(nd);
+        let head = 0, m = 0, rr = 0, integ = 0, dState = 0, prevY = null;
+        const tauF = Math.max(ETA * g.td, 2 * DT);
+        const step = Math.round(0.002 / DT);
+        const ts = [], ys = [];
+        let peak = 0, blown = false;
+        for (let i = 0; i < n; i++) {
+          const t = i * DT, ref = t >= 0.05 ? 3 : 0, e = ref - rr;
+          let dTerm = 0;
+          if (g.td > 0) {
+            if (prevY === null) prevY = rr;
+            dState += ((rr - prevY) / DT - dState) * (DT / tauF);
+            prevY = rr;
+            dTerm = -g.kp * g.td * dState;
+          }
+          integ += (g.kp / g.ti) * e * DT;
+          const u = g.kp * e + integ + dTerm;
+          const ue = ub[head]; ub[head] = u; head = (head + 1) % nd;
+          m += (ue - m) / TAUM * DT;
+          rr += (m / IXX) * DT;
+          if (!isFinite(rr) || Math.abs(rr) > 1e4) { blown = true; break; }
+          if (t > 0.05 && rr > peak) peak = rr;
+          if (i % step === 0) { ts.push(t); ys.push(rr); }
+        }
+        return { ts, ys, blown, os: Math.max(0, (peak / 3 - 1) * 100) };
+      }
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const L = Number($('cmpL').value) * 1e-3;
+        $('cmpLVal').textContent = (L * 1e3).toFixed(0);
+        const rf = simRate(FLT, L);
+        const rd = simRate(DES, L);
+        const x0 = 70, w = 660, h = 250, tMax = 1.0;
+        const yPk = Math.max(4.5, ...rf.ys, ...rd.ys);
+        const yMax = Math.min(12, Math.ceil(yPk * 1.15));
+        ctx.strokeStyle = c.border; ctx.lineWidth = 1; ctx.strokeRect(x0, 26, w, h);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'right';
+        ctx.fillText(String(yMax), x0 - 6, 36);
+        ctx.fillText('0', x0 - 6, 26 + h);
+        ctx.save(); ctx.translate(x0 - 44, 26 + h / 2); ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'center'; ctx.fillText('ロールレート [rad/s]', 0, 0); ctx.restore();
+        const yr = 26 + h * ((yMax - 3) / yMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        const plot = (r2, color) => {
+          ctx.strokeStyle = color; ctx.lineWidth = 2.2; ctx.beginPath();
+          r2.ts.forEach((t, i) => {
+            const x = x0 + (t / tMax) * w;
+            const y = 26 + h * ((yMax - Math.max(0, Math.min(yMax, r2.ys[i]))) / yMax);
+            i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+          });
+          ctx.stroke();
+        };
+        plot(rf, '#c2373b'); plot(rd, c.accent);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#c2373b'; ctx.fillText('実飛行ゲイン（速いが脆い）', x0 + 8, 22);
+        ctx.fillStyle = c.accent; ctx.fillText('60°設計（遅いが崩れない）', x0 + 230, 22);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
+        $('cmpReadout').textContent =
+          `行き過ぎ: 実飛行 ${rf.blown ? '発散' : rf.os.toFixed(0) + '%'} / ` +
+          `60°設計 ${rd.blown ? '発散' : rd.os.toFixed(0) + '%'}`;
+      }
+      $('cmpL').addEventListener('input', redraw);
+      $('cmpReset').addEventListener('click', () => { $('cmpL').value = '12'; redraw(); });
+      redraw();
+    })();
+  })();
+  </script>
+  <script data-goatcounter="https://kouhei1970.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>
