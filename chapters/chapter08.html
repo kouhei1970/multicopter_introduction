@@ -109,9 +109,118 @@
       あとは道具箱（第5〜7章）の出番です。
     </p>
 
-    <h2>8.4 制御器設計 — カスケードと、速度で近づく知恵</h2>
+    <h2>8.4 まず PID をつないでみる — ゲイン調整の限界を体で知る</h2>
     <p>
-      構造は姿勢と同じカスケードです。実機の値（params.cpp、実飛行値）ごと示します:
+      道具は第6章で揃っています。さっそく高度誤差から推力補正への PID
+      （時定数形、D は測定値側）をつないで、<strong>自分の手で調整してみてください</strong>。
+      目標高度は 0.2〜3.0 m の全範囲で動かせます。
+      なお、このシミュレーションの中身は最初から実機仕様です——
+      高度は <strong>ToF 30 Hz</strong> でしか測れず、制御は相補フィルタの推定値
+      \(\hat{z}, \hat{v}\) を使い、推力補正には ±0.15 N の飽和があります
+      （計測の中身は 8.6 節で開けます）。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="tuneCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>目標高度 [m]:
+          <input type="range" id="tnZ" min="2" max="30" value="5">
+          <span id="tnZVal"></span>
+        </label>
+        <label>\(K_p\):
+          <input type="range" id="tnKp" min="5" max="100" value="30">
+          <span id="tnKpVal"></span>
+        </label>
+        <label>\(T_i\) [s]:
+          <input type="range" id="tnTi" min="20" max="100" value="50">
+          <span id="tnTiVal"></span>
+        </label>
+        <label>\(T_d\) [s]:
+          <input type="range" id="tnTd" min="0" max="30" value="8">
+          <span id="tnTdVal"></span>
+        </label>
+        <button type="button" class="sim-reset" id="tnReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="tnReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 単段 PID（\(u = K_p(e + \frac{1}{T_i}\int e\,dt) - K_p T_d \hat{v}\)）、
+      推力補正 ±0.15 N・モータ遅れ 20 ms・計測は ToF 30 Hz＋相補フィルタ。
+      上段=高度、下段=推力補正。
+    </p>
+
+    <p>やってみると、こんな壁に当たるはずです:</p>
+    <ul>
+      <li><strong>目標 0.5 m で調整する</strong> → 数 cm の行き過ぎまで追い込めます
+        （例: \(K_p=0.3, T_i=5, T_d=0.8\) で約 6 cm）。</li>
+      <li><strong>そのまま目標を 3 m にする</strong> → 同じゲインなのに行き過ぎは
+        20 cm 超に化けます。</li>
+      <li><strong>では 3 m に合わせて調整し直すと？</strong> → ゲインを弱めても
+        行き過ぎは大きいまま、全部が遅くなるだけ。強めれば振動。
+        <strong>どのゲインの組も、小さい目標の機敏さと大きい目標の素直さを
+        両立できません</strong>。</li>
+    </ul>
+    <p>
+      これはゲインの選び方が下手なのではありません。線形の世界ならステップの大きさは
+      応答の「形」を変えないはず——それが変わるのは、<strong>飽和という非線形</strong>が
+      いるからです。遠い目標ほど接近速度が育ち、±0.15 N のブレーキでは
+      止まりきれない。<strong>ゲインをいくらいじっても、この構造は直らない</strong>のです。
+    </p>
+
+    <h2>8.5 目標の渡し方を変える — そしてカスケードを再発明する</h2>
+    <p>
+      発想を変えます。ゲインではなく<strong>目標の渡し方</strong>を変えるのです。
+      第一手: 目標を一度に渡さず、<strong>速度制限つきでゆっくり動かす</strong>
+      （目標整形。0.4 m/s のランプで本当の目標まで滑らかに移動させる）。
+      「目標の近傍までは速度で近づく」という発想の、これが最小実装です。
+      ——ところが、下の実験②を見てください。<strong>それだけでは直りません</strong>。
+      意外なことに、行き過ぎはむしろ少し悪化します。
+    </p>
+    <p>
+      犯人は D 項です。一定速度で登っている間、測定値微分の D は
+      「動くな」と<strong>逆らい続け</strong>（この例で約 −0.1 N）、
+      その分を積分が抱え込みます。目標に着いた瞬間、抱えた分が吐き出されて
+      機体を押し上げる——第6章で学んだ「D は重り」の高度版です。
+      でも、ここで気づきます。<strong>整形した目標は滑らかなのだから、
+      その速度（ランプの傾き）も一緒に指令できる</strong>はず。
+      D を「測定値の速度」ではなく<strong>「目標速度との差」</strong>に掛け、
+      上昇の抵抗分（\(d_v m \dot{r}\)）をフィードフォワードで先渡しすると——
+      実験③: <strong>どの目標でも行き過ぎ 4〜5 cm・整定は倍速</strong>になります。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="shapeCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>目標高度 [m]:
+          <input type="range" id="shZ" min="2" max="30" value="30">
+          <span id="shZVal"></span>
+        </label>
+        <label>方式:
+          <select id="shMode">
+            <option value="raw">① 目標をそのまま渡す（8.4のまま）</option>
+            <option value="shape">② 目標整形のみ（0.4 m/s ランプ）</option>
+            <option value="shapeVel" selected>③ 整形＋速度も指令（D=速度誤差＋抵抗FF）</option>
+          </select>
+        </label>
+        <button type="button" class="sim-reset" id="shReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="shReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: ゲインは 8.4 の代表値（\(K_p=0.3, T_i=5, T_d=0.8\)）で固定。
+      破線=整形後の目標。上段=高度、下段=鉛直速度。
+      ③の抵抗 FF は理論推定値 \(d_v\) の見込み——ずれても残りは
+      I が埋める（8.2 の「FF で小さく、FB で埋める」の再演）。
+    </p>
+
+    <p>
+      さて、実験③をよく見ると、私たちは<strong>カスケード制御を再発明</strong>して
+      いました。「位置の誤差から欲しい速度を決め（整形ランプ＝速度指令）、
+      速度の誤差を別の項が追いかける（D=速度誤差）」——これは第5章の
+      位置ループ＋速度ループそのものです。実機 StampFly も最初からこの形で、
+      速度指令の上限（クランプ）が整形の役割を果たします:
     </p>
     <table class="data-table">
       <thead><tr><th>ループ</th><th>\(K_p\)</th><th>\(T_i\) [s]</th><th>出力制限</th></tr></thead>
@@ -121,53 +230,13 @@
       </tbody>
     </table>
     <p>
-      速度ループの交差は約 2.7 rad/s、位置は 0.45 rad/s——帯域比 1/6 で、
-      第5章の 1/3 則よりさらに保守的です（30 Hz 計測と運用の余裕のため）。
-      注目してほしいのは<strong>出力制限 ±0.5 m/s</strong> です。これは安全装置である
-      と同時に、<strong>設計の道具</strong>でもあります。目標高度が遠いとき、
-      素朴なフィードバックは大きなオーバーシュートを出します——
-      誤差が大きい間に積分が育ってしまうからです。そこで
-      <strong>「目標の近傍までは速度制御だけで近づき、近づいてから位置制御に任せる」</strong>。
-      実は±0.5 m/s のクランプはこの考えの実装そのものです——誤差が大きい間、
-      位置ループの出力は必ずクランプに当たり、機体は「一定速度で接近する」
-      速度制御の乗り物になります。下の実験で、クランプなしの教科書版と比べてください。
+      帯域は速度ループ約 2.7 rad/s・位置 0.45 rad/s（比 1/6、第5章の 1/3 則より保守的）。
+      なお実機にも「上昇の抵抗分を積分が抱えて捕捉時に吐き出す」問題は残っていて、
+      開発ログで<strong>「捕捉オーバーシュート」</strong>として格闘の跡があります——
+      8.7 節の「積分の強さをフェーズで切り替える」工夫はその対策でもあります。
     </p>
 
-    <div class="sim-panel">
-      <canvas id="appCanvas" width="760" height="430"></canvas>
-      <div class="sim-opts">
-        <label>目標高度 [m]:
-          <input type="range" id="apZ" min="10" max="40" value="30">
-          <span id="apZVal"></span>
-        </label>
-        <button type="button" class="sim-reset" id="apReset">初期値に戻す</button>
-      </div>
-      <div class="sim-readout" id="apReadout"></div>
-    </div>
-
-    <p class="src">
-      条件: 実機ゲイン・実機出力制限・実測プラント。
-      ①教科書のまま（位置PI直行・制限なし）と
-      ②実機方式（速度指令クランプ±0.5 m/s＋条件付き積分）の重ね描き。
-      上段=高度、下段=鉛直速度（②が台形プロファイルになる点に注目）。
-    </p>
-
-    <ul>
-      <li><strong>①教科書のまま</strong> → 接近中に位置の積分が野放しで育ち、
-        大きく行き過ぎてからゆっくり戻ります（3mステップで約80cm）。</li>
-      <li><strong>②実機方式（クランプ＋条件付き積分）</strong> → 速度が台形プロファイルに
-        なり、行き過ぎは約3分の1に。<strong>大きな移動は「位置の問題」ではなく
-        「速度の問題」として扱う</strong>——これが実機の知恵です。</li>
-    </ul>
-    <p>
-      ②にも二十数cmの行き過ぎが残っている点に注目してください。正体は、
-      上昇中に速度ループの積分へ溜まる「上昇の抵抗分」の余りです。目標を
-      捕まえた瞬間、この余りが吐き出されるまで機体は昇り続ける——実機の開発ログで
-      <strong>「捕捉オーバーシュート」</strong>と呼ばれて格闘されていた現象そのもので、
-      8.6節の「積分の強さをフェーズで切り替える」工夫につながります。
-    </p>
-
-    <h2>8.5 現実① — 高度は 30 Hz でしか測れない</h2>
+    <h2>8.6 現実① — 30 Hz の計測をどう埋めるか: 相補フィルタからカルマンフィルタへ</h2>
     <p>
       姿勢のジャイロは数kHzで読めますが、高度の絶対値を教えてくれる
       ToF センサ（レーザーの往復時間で距離を測る素子）は
@@ -179,8 +248,38 @@
       （400 Hz）が担い、ToF の更新が来るたびに高度と速度をそっと引き戻す
       （更新1回あたり高度に30%・速度に5%）。役割分担は第5章のカスケードと同じ発想です——
       <strong>速いが流されやすい信号と、遅いが確かな信号を組み合わせる</strong>。
-      くわしい仕組みは次章（センサと状態推定）で扱います。
+      8.4 からのシミュレーションの中で動いていたのは、まさにこの相補フィルタです。
     </p>
+    <p>
+      ただし相補フィルタの補正ゲイン（30% / 5%）は<strong>人が決めた固定値</strong>で、
+      そして加速度計には必ず<strong>バイアス</strong>（振動・取り付け・温度による
+      一定のずれ）が乗ります。固定の弱い引き戻しでは、積分され続けるバイアスを
+      消しきれません。カルマンフィルタはここで二枚上手です——
+      ①補正ゲインを<strong>ノイズの統計から自動で計算</strong>し、
+      ②<strong>「バイアス」そのものを状態に加えて推定し、差し引いて</strong>しまえる。
+      下の実験でバイアスを動かして、両者の差を見てください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="kfCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label>加速度計バイアス [m/s²]:
+          <input type="range" id="kfNa" min="0" max="30" value="15">
+          <span id="kfNaVal"></span>
+        </label>
+        <button type="button" class="sim-reset" id="kfReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="kfReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 0.8 m へ上昇して保持する同一飛行（制御は実機カスケード）に対し、
+      同じ計測（ToF 30 Hz ±3 mm・加速度計にノイズ σ=0.3 とバイアス）から、
+      相補フィルタと3状態カルマンフィルタ（状態は \(z, v\) と加速度バイアス \(b\)。
+      補正ゲインは共分散の更新から毎回自動計算）で高度を推定し、
+      推定誤差 \(\hat{z}-z\) を比較。多センサへの拡張と理論の中身は第9章で。
+    </p>
+
 
     <div class="note-box">
       <strong>コラム — 気圧計を「あえて使わない」判断:</strong>
@@ -192,7 +291,7 @@
       基準（何に対する量か）が合っていることが先</strong>——という教訓です。
     </div>
 
-    <h2>8.6 現実② — トリム推力は動く</h2>
+    <h2>8.7 現実② — トリム推力は動く</h2>
     <p>
       8.2 の電圧補償で「同じ指令なら同じ推力」になったはず——でした。
       実際の3分間ホバリングのログ解析（2026-06-27）はこう言っています:
@@ -207,7 +306,7 @@
     </p>
     <p>
       さて、この「内側に入るゆっくりした外乱」への定石は何だったでしょうか。
-      第5章5.5節の答え——<strong>外乱が入る場所の内側の積分を強くする</strong>です。
+      第5章 5.5 節の答え——<strong>外乱が入る場所の内側の積分を強くする</strong>です。
       外側（位置）の積分は届きません。実際の解析でも、速度ループの
       \(T_i\) を 2.5→1.5 s に縮めるとふらつきが 20%減、1.0 s で 37%減。
       しかも \(K_p\) を上げる案と違って交差周波数を上げない（遅れに突っ込まない）ので
@@ -254,7 +353,7 @@
       紹介にとどめます。
     </p>
 
-    <h2>8.7 実機の値で運転する — 高度ホールド</h2>
+    <h2>8.8 実機の値で運転する — 高度ホールド</h2>
     <p>
       仕上げです。実機のゲイン・実機の制限・30 Hz の計測・電池サグ外乱——
       全部入りの高度ホールドを運転してください。第6章6.7と同じく、
@@ -313,9 +412,13 @@
         1次元で通しで練習できる軸。プラントは \(27.2/(s(s+1.4)(0.02s+1))\)（全て実測値）。</li>
       <li>トリム点 \(T_0 = mg\) は1行だが、「同じ Duty で同じ推力」は電池電圧で崩れる。
         <strong>補償でずれを小さくとどめ、残りをフィードバックで埋める</strong>のが実機の分担。</li>
-      <li>大きな高度変更は「位置の問題」でなく<strong>「速度の問題」</strong>として扱う——
-        目標近傍まで速度制御で近づけば、オーバーシュートは80cm→数cmに。</li>
-      <li>高度計測は 30 Hz。速い加速度計と確かな ToF の<strong>相補</strong>で埋める。
+      <li>単段 PID は<strong>どうゲインを調整しても</strong>「小さい目標の機敏さ」と
+        「大きい目標の素直さ」を両立できない（飽和という非線形のため）。
+        解決はゲインでなく<strong>目標の渡し方</strong>——整形して速度ごと指令すると、
+        どの目標でも行き過ぎ4〜5cm。そしてそれは<strong>カスケードの再発明</strong>だった。</li>
+      <li>高度計測は 30 Hz。速い加速度計と確かな ToF の<strong>相補</strong>で埋める
+        （全シミュレーションの中で最初から動いていた）。固定ゲインの相補に対し、
+        <strong>カルマンフィルタはノイズの統計からゲインを自動で決めて上回る</strong>。
         基準の違う気圧計は「あえて使わない」。</li>
       <li>それでも残る電池サグの低周波外乱には、<strong>内側（速度）の積分を強くする</strong>のが
         正しいレバー（外側は届かない・交差を上げないので安全）。実機はフェーズ切替と
@@ -398,7 +501,7 @@
     function altSim(o) {
       const opt = Object.assign({
         mode: 'capture', zRef: 0.8, tRef: 1.0, kpV: KP_V, tiV: 2.5,
-        sagA: 0, sagT: 1e9, tof: false, tEnd: 12, sample: 0.02,
+        sagA: 0, sagT: 1e9, tof: true, tEnd: 12, sample: 0.02,
       }, o);
       const n = Math.round(opt.tEnd / DT);
       let z = 0, v = 0, th = 0, intP = 0, intV = 0;
@@ -468,43 +571,239 @@
                std, satTime: satSteps * DT };
     }
 
-    // ---------- 8.4 approach strategies / 大ステップの3方式 ----------
+    // 単段PID（30Hz計測・相補・飽和つき）/ single-loop PID with realistic sensing
+    // mode: 'raw'（目標そのまま）| 'shape'（整形のみ）| 'shapeVel'（整形+速度指令+抵抗FF）
+    function simSingle(o) {
+      const opt = Object.assign({
+        mode: 'raw', zRef: 0.5, kp: 0.3, ti: 5, td: 0.8, tEnd: 25, sample: 0.02,
+      }, o);
+      const n = Math.round(opt.tEnd / DT);
+      let z = 0, v = 0, th = 0, intg = 0;
+      let zh = 0, vh = 0, tofT = 0, rS = 0, rV = 0;
+      let seed = 777;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x3fffffff - 1; };
+      const step = Math.round(opt.sample / DT);
+      const ts = [], zs = [], vs = [], us = [], rs = [];
+      let peak = 0, settle = 0, satSteps = 0;
+      for (let i = 0; i < n; i++) {
+        const t = i * DT;
+        const rRaw = t >= 1 ? opt.zRef : 0;
+        if (opt.mode === 'raw') { rS = rRaw; rV = 0; }
+        else {
+          const dr = rRaw - rS, mx = 0.4 * DT;
+          const d1 = Math.max(-mx, Math.min(mx, dr));
+          rS += d1; rV = d1 / DT;
+        }
+        // 相補フィルタ（実機仕様: 加速度積分 + ToF 30Hz 引き戻し）
+        const aTrue = th / M - DVM * v;
+        vh += aTrue * DT; zh += vh * DT; tofT += DT;
+        if (tofT >= 1 / 30) {
+          tofT -= 1 / 30;
+          const err = z + 0.003 * rnd() - zh;
+          zh += 0.30 * err; vh += 0.05 * err / (1 / 30);
+        }
+        const e = rS - zh;
+        let iN = intg + (opt.kp / opt.ti) * e * DT;
+        let u;
+        if (opt.mode === 'shapeVel')
+          u = opt.kp * e + iN + opt.kp * opt.td * (rV - vh) + DVM * M * rV;
+        else
+          u = opt.kp * e + iN - opt.kp * opt.td * vh;
+        const uc = Math.max(-T_CLAMP, Math.min(T_CLAMP, u));
+        if (uc !== u) { satSteps++; if (Math.sign(e) === Math.sign(u)) iN = intg; }
+        intg = iN; u = uc;
+        th += (u - th) / TAUM * DT;
+        v += (th / M - DVM * v) * DT; z += v * DT;
+        if (t > 1 && z > peak) peak = z;
+        if (Math.abs(z - rRaw) > 0.03) settle = t - 1;
+        if (i % step === 0) { ts.push(t); zs.push(z); vs.push(v); us.push(u * 1000); rs.push(rS); }
+      }
+      return { ts, zs, vs, us, rs, os: Math.max(0, (peak - opt.zRef) * 100),
+               settle, satTime: satSteps * DT };
+    }
+
+    // ---------- 8.4 single-PID tuning / 単段PIDの調整体験 ----------
     (function () {
-      const cv = $('appCanvas'), ctx = cv.getContext('2d');
+      const cv = $('tuneCanvas'), ctx = cv.getContext('2d');
       function redraw() {
         const c = themeColors();
         ctx.clearRect(0, 0, cv.width, cv.height);
-        const zRef = Number($('apZ').value) / 10;
-        $('apZVal').textContent = zRef.toFixed(1);
-        const tEnd = 20;
-        const rN = altSim({ mode: 'naive', zRef, tEnd });
-        const rC = altSim({ mode: 'clamp', zRef, tEnd });
-        const x0 = 70, w = 660, hT = 210;
-        const zMax = Math.ceil((zRef + 1) * 2) / 2;
+        const zRef = Number($('tnZ').value) / 10;
+        const kp = Number($('tnKp').value) / 100;
+        const ti = Number($('tnTi').value) / 10;
+        const td = Number($('tnTd').value) / 10;
+        $('tnZVal').textContent = zRef.toFixed(1);
+        $('tnKpVal').textContent = kp.toFixed(2);
+        $('tnTiVal').textContent = ti.toFixed(1);
+        $('tnTdVal').textContent = td.toFixed(1);
+        const res = simSingle({ mode: 'raw', zRef, kp, ti, td });
+        const x0 = 70, w = 660, hT = 210, tEnd = 25;
+        const zMax = Math.max(1, Math.ceil((zRef + 0.6) * 2) / 2);
         drawAxes(ctx, x0, 24, w, hT, '0', String(zMax), '高度 [m]');
         const yr = 24 + hT * ((zMax - zRef) / zMax);
         ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
         ctx.setLineDash([]);
-        plotXY(ctx, rN.ts, rN.zs, x0, 24, w, hT, tEnd, 0, zMax, '#c2373b', false, 2.0);
-        plotXY(ctx, rC.ts, rC.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.4);
-        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillStyle = '#c2373b'; ctx.fillText('①教科書のまま', x0 + 8, 20);
-        ctx.fillStyle = c.accent; ctx.fillText('②実機方式（クランプ+条件付き積分）', x0 + 120, 20);
-        const yB = 262, hB = 130, vMax = 1.2;
+        plotXY(ctx, res.ts, res.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.2);
+        const yB = 262, hB = 130, uMax = 160;
+        drawAxes(ctx, x0, yB, w, hB, String(-uMax), String(uMax), '推力補正 [mN]');
+        [150, -150].forEach(vv => {
+          const yy = yB + hB * ((uMax - vv) / (2 * uMax));
+          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+        });
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tEnd, -uMax, uMax, '#2e8b57', false, 1.6);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        $('tnReadout').textContent =
+          `行き過ぎ ${res.os.toFixed(1)} cm | 3cm帯整定 ${res.settle.toFixed(1)} s | ` +
+          `飽和時間 ${res.satTime.toFixed(2)} s`;
+      }
+      ['tnZ', 'tnKp', 'tnTi', 'tnTd'].forEach(id => $(id).addEventListener('input', redraw));
+      $('tnReset').addEventListener('click', () => {
+        $('tnZ').value = '5'; $('tnKp').value = '30'; $('tnTi').value = '50'; $('tnTd').value = '8';
+        redraw();
+      });
+      redraw();
+    })();
+
+    // ---------- 8.5 reference shaping evolution / 目標整形の進化 ----------
+    (function () {
+      const cv = $('shapeCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const zRef = Number($('shZ').value) / 10;
+        $('shZVal').textContent = zRef.toFixed(1);
+        const mode = $('shMode').value;
+        const res = simSingle({ mode, zRef });
+        const x0 = 70, w = 660, hT = 210, tEnd = 25;
+        const zMax = Math.max(1, Math.ceil((zRef + 0.6) * 2) / 2);
+        drawAxes(ctx, x0, 24, w, hT, '0', String(zMax), '高度 [m]');
+        const yr = 24 + hT * ((zMax - zRef) / zMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        if (mode !== 'raw')
+          plotXY(ctx, res.ts, res.rs, x0, 24, w, hT, tEnd, 0, zMax, c.muted, true, 1.2);
+        plotXY(ctx, res.ts, res.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.2);
+        const yB = 262, hB = 130, vMax = 1.5;
         drawAxes(ctx, x0, yB, w, hB, String(-vMax), String(vMax), '速度 [m/s]');
         const y0line = yB + hB * 0.5;
         ctx.strokeStyle = c.border;
         ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
-        plotXY(ctx, rN.ts, rN.vs, x0, yB, w, hB, tEnd, -vMax, vMax, '#c2373b', false, 1.6);
-        plotXY(ctx, rC.ts, rC.vs, x0, yB, w, hB, tEnd, -vMax, vMax, c.accent, false, 2.0);
+        plotXY(ctx, res.ts, res.vs, x0, yB, w, hB, tEnd, -vMax, vMax, '#2e8b57', false, 1.8);
         ctx.fillStyle = c.fg; ctx.textAlign = 'center';
-        ctx.fillText('時間 [s]（②の速度が台形プロファイルになっている点に注目）', x0 + w / 2, yB + hB + 16);
-        $('apReadout').textContent =
-          `オーバーシュート: ①教科書のまま ${rN.os.toFixed(0)} cm / ②実機方式 ${rC.os.toFixed(0)} cm`;
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        $('shReadout').textContent =
+          `行き過ぎ ${res.os.toFixed(1)} cm | 3cm帯整定 ${res.settle.toFixed(1)} s` +
+          (mode === 'shapeVel' ? ' | どの目標高度でも試してみてください——行き過ぎが変わりません' : '');
       }
-      $('apZ').addEventListener('input', redraw);
-      $('apReset').addEventListener('click', () => { $('apZ').value = '30'; redraw(); });
+      $('shZ').addEventListener('input', redraw);
+      $('shMode').addEventListener('change', redraw);
+      $('shReset').addEventListener('click', () => {
+        $('shZ').value = '30'; $('shMode').value = 'shapeVel'; redraw();
+      });
+      redraw();
+    })();
+
+    // ---------- 8.6 complementary vs Kalman / 相補 vs 3状態カルマン ----------
+    (function () {
+      const cv = $('kfCanvas'), ctx = cv.getContext('2d');
+      // 3x3 行列ヘルパ / tiny matrix helpers
+      const mul = (A, B) => A.map(r => B[0].map((_, j) => r.reduce((s2, x, k) => s2 + x * B[k][j], 0)));
+      const trp = A => A[0].map((_, j) => A.map(r => r[j]));
+      const madd = (A, B) => A.map((r, i) => r.map((x, j) => x + B[i][j]));
+      function runEst(est, bias) {
+        const tEnd = 20, n = Math.round(tEnd / DT);
+        const sigA = 0.3, sigTof = 0.003;
+        let z = 0, v = 0, th = 0, intP = 0, intV = 0;
+        let zh = 0, vh = 0, bh = 0, tofT = 0;
+        let P = [[0.01, 0, 0], [0, 0.01, 0], [0, 0, 0.05]];
+        const QA = sigA * sigA, QB = 1e-3, RB = sigTof * sigTof;
+        let seed = 4242;
+        const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x3fffffff - 1; };
+        const g = () => (rnd() + rnd() + rnd()) * 0.577;
+        const step = Math.round(0.02 / DT);
+        const ts = [], ezs = [];
+        let se = 0, sv = 0, cnt = 0;
+        for (let i = 0; i < n; i++) {
+          const t = i * DT, r = t >= 1 ? 0.8 : 0;
+          // 実機カスケードで飛行 / fly with the real cascade on the estimates
+          const eP = r - zh;
+          let iN = intP + (0.45 / 7) * eP * DT, vc = 0.45 * eP + iN;
+          const vcc = Math.max(-0.5, Math.min(0.5, vc));
+          if (vcc !== vc && Math.sign(eP) === Math.sign(vc)) iN = intP;
+          intP = iN;
+          const eV = vcc - vh;
+          let iN2 = intV + (0.1 / 2.5) * eV * DT;
+          let u = 0.1 * eV + iN2;
+          const uc = Math.max(-T_CLAMP, Math.min(T_CLAMP, u));
+          if (uc !== u && Math.sign(eV) === Math.sign(u)) iN2 = intV;
+          intV = iN2; u = uc;
+          th += (u - th) / TAUM * DT;
+          const aT = th / M - DVM * v;
+          v += aT * DT; z += v * DT;
+          const aMeas = aT + bias + sigA * g();     // 加速度計 = 真値 + バイアス + ノイズ
+          if (est === 'comp') { vh += aMeas * DT; zh += vh * DT; }
+          else {
+            const aC = aMeas - bh;                  // バイアス推定値を差し引く
+            zh += vh * DT + 0.5 * aC * DT * DT; vh += aC * DT;
+            const A = [[1, DT, -DT * DT / 2], [0, 1, -DT], [0, 0, 1]];
+            const G = [[DT * DT / 2], [DT], [0]];
+            const Qm = madd(mul(mul(G, [[QA]]), trp(G)),
+                            [[0, 0, 0], [0, 0, 0], [0, 0, QB * DT]]);
+            P = madd(mul(mul(A, P), trp(A)), Qm);
+          }
+          tofT += DT;
+          if (tofT >= 1 / 30) {
+            tofT -= 1 / 30;
+            const err = z + sigTof * g() - zh;
+            if (est === 'comp') { zh += 0.30 * err; vh += 0.05 * err / (1 / 30); }
+            else {
+              const S = P[0][0] + RB;
+              const K = [P[0][0] / S, P[1][0] / S, P[2][0] / S];
+              zh += K[0] * err; vh += K[1] * err; bh += K[2] * err;
+              const IKH = [[1 - K[0], 0, 0], [-K[1], 1, 0], [-K[2], 0, 1]];
+              P = mul(IKH, P);
+            }
+          }
+          if (t > 3) { se += (zh - z) ** 2; sv += (vh - v) ** 2; cnt++; }
+          if (i % step === 0) { ts.push(t); ezs.push((zh - z) * 1000); }
+        }
+        return { ts, ezs, zStd: Math.sqrt(se / cnt) * 1000,
+                 vStd: Math.sqrt(sv / cnt) * 1000, bh };
+      }
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const bias = Number($('kfNa').value) / 100;
+        $('kfNaVal').textContent = bias.toFixed(2);
+        const rc = runEst('comp', bias);
+        const rk = runEst('kf', bias);
+        const x0 = 70, w = 660, h = 250, eMax = 15, tEnd = 20;
+        drawAxes(ctx, x0, 26, w, h, String(-eMax), String(eMax), '高度の推定誤差 [mm]');
+        const y0line = 26 + h * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, rc.ts, rc.ezs, x0, 26, w, h, tEnd, -eMax, eMax, '#c2373b', false, 1.4);
+        plotXY(ctx, rk.ts, rk.ezs, x0, 26, w, h, tEnd, -eMax, eMax, c.accent, false, 1.6);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#c2373b'; ctx.fillText('相補フィルタ（固定ゲイン）', x0 + 8, 22);
+        ctx.fillStyle = c.accent; ctx.fillText('カルマンフィルタ（バイアスも推定）', x0 + 200, 22);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
+        $('kfReadout').textContent =
+          `高度誤差 std: 相補 ${rc.zStd.toFixed(1)} mm / カルマン ${rk.zStd.toFixed(1)} mm | ` +
+          `速度誤差 std: 相補 ${rc.vStd.toFixed(0)} mm/s / カルマン ${rk.vStd.toFixed(0)} mm/s | ` +
+          `カルマンの推定バイアス b̂ = ${rk.bh.toFixed(3)}（真値 ${bias.toFixed(2)}）`;
+      }
+      $('kfNa').addEventListener('input', redraw);
+      $('kfReset').addEventListener('click', () => { $('kfNa').value = '15'; redraw(); });
       redraw();
     })();
 
