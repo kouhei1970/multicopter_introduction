@@ -1,0 +1,621 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="マルチコプタ制御入門">
+  <meta property="og:title" content="第8章 高度の制御 | マルチコプタ制御入門">
+  <meta property="og:description" content="手のひらサイズのドローン StampFly の実測データで学ぶマルチコプタ制御。ブラウザで動くシミュレーションで、教科書の式から実機の運転まで。">
+  <meta property="og:url" content="https://kouhei1970.github.io/multicopter_introduction/chapters/chapter08.html">
+  <meta property="og:image" content="https://kouhei1970.github.io/multicopter_introduction/assets/img/ogp.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <title>第8章 高度の制御 | マルチコプタ制御入門</title>
+  <link rel="stylesheet" href="../assets/css/style.css">
+  <!-- KaTeX: render LaTeX math in the browser / ブラウザ上でLaTeX数式を組版 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"
+    onload="renderMathInElement(document.body, {delimiters: [
+      {left: '$$', right: '$$', display: true},
+      {left: '\\(', right: '\\)', display: false}
+    ]});"></script>
+  <style>
+    .data-table { border-collapse: collapse; margin: 1rem 0; font-size: 0.88rem; }
+    .data-table th, .data-table td { border: 1px solid var(--border); padding: 0.35rem 0.7rem; text-align: center; }
+    .data-table th { background: var(--accent-soft); }
+    .note-box {
+      border-left: 4px solid var(--accent); background: var(--accent-soft);
+      border-radius: 0 8px 8px 0; padding: 0.7rem 1rem; margin: 1.2rem 0; font-size: 0.92rem;
+    }
+    .src { color: var(--fg-muted); font-size: 0.8rem; }
+    .math-scroll { overflow-x: auto; }
+    .sim-panel { border: 1px solid var(--border); border-radius: 12px; background: var(--card-bg); padding: 1rem; margin: 1.5rem 0; }
+    .sim-panel canvas { width: 100%; height: auto; display: block; border-radius: 8px; }
+    .sim-opts { display: flex; flex-wrap: wrap; gap: 0.5rem 1.4rem; align-items: center; margin-top: 0.8rem; font-size: 0.9rem; }
+    .sim-opts label { display: flex; align-items: center; gap: 0.35rem; }
+    .sim-opts input[type="range"] { width: 9rem; }
+    .sim-opts button.sim-reset {
+      margin-left: auto; font-size: 0.8rem; padding: 0.25rem 0.7rem;
+      border: 1px solid var(--border); border-radius: 6px;
+      background: var(--card-bg); color: var(--fg); cursor: pointer;
+    }
+    .sim-opts button.sim-reset:hover { background: var(--accent-soft); }
+    .sim-readout { font-family: ui-monospace, Menlo, monospace; font-size: 0.85rem; color: var(--fg-muted); margin-top: 0.5rem; }
+    nav.chapter-nav { display: flex; justify-content: space-between; margin: 2.5rem 0 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+  <header class="site-header">
+    <p class="subtitle"><a href="../index.html">マルチコプタ制御入門</a> — 第8章</p>
+    <h1>高度の制御</h1>
+    <p class="subtitle">モデル・トリム・線形化・設計 — 王道を1次元で歩く</p>
+  </header>
+
+  <main>
+    <p>
+      この章では上下方向、つまり<strong>高度</strong>を制御します。姿勢と違って
+      軸の連成がない素直な1次元——だからこそ、制御設計の王道の手順
+      <strong>「モデルを立てる → トリム点を見つける → 線形化する → 制御器を設計する」</strong>を、
+      省略なしのフルコースで歩くのに最適な題材です。
+      そして後半では、実機がこの王道の外で戦っている2つの「現実」——
+      <strong>高度は 30 Hz でしか測れない</strong>こと、
+      <strong>トリム推力は動く</strong>こと——を、実際の飛行ログ解析の物語つきで見ます。
+    </p>
+
+    <h2>8.1 モデル — 鉛直1次元の運動方程式</h2>
+    <p>
+      上向きを正にとると、機体の鉛直運動はこれだけです:
+    </p>
+    <div class="math-scroll">
+    $$m\dot{v} = T - mg - d_v\,v, \qquad \dot{z} = v$$
+    </div>
+    <p>
+      \(T\) は4つのロータの合計推力、\(d_v v\) は鉛直方向の空気抵抗
+      （ホバ付近ではロータの誘導流による項が主。理論推定で \(d_v/m \approx 1.4\ \mathrm{1/s}\)、
+      未実測なので設計では小さめに見込みます）。推力は第6章と同じく、
+      指令からモータの一次遅れ \(\tau_m \approx 20\ \mathrm{ms}\) を経て発生します。
+      使う数字はすべて第4章の実測値: \(m = 36.8\ \mathrm{g}\)。
+    </p>
+
+    <h2>8.2 トリム点 — まず「釣り合い」を見つける</h2>
+    <p>
+      制御の前に、系がじっとしていられる点＝<strong>トリム点</strong>（平衡点）を探します。
+      ホバリングの釣り合いは \(T_0 = mg = 0.361\ \mathrm{N}\)。
+      たった1行ですが、実はここに実機の最初の難所があります。
+      「Duty をいくつにすれば 0.361 N 出るのか」は、
+      <strong>電池電圧で変わってしまう</strong>のです。
+    </p>
+    <p>
+      StampFly はこれを第6章で見た逆モータ曲線＋<strong>電圧補償</strong>
+      （必要電圧を生きた電池電圧で割って duty にする: duty = V/Vbat）で
+      フィードフォワード的に解決しようとします。理論的には
+      「同じ推力指令 → 同じ推力」が保証されるはず——しかし実際には
+      ぴったりにはなりません。<strong>ずれを小さくとどめる工夫（補償）と、
+      残りをフィードバックで埋める仕組みの分担</strong>。これがこの章の裏テーマです。
+    </p>
+
+    <h2>8.3 線形化 — トリまわりの小さな世界</h2>
+    <p>
+      トリム点まわりの変化分 \(\Delta T = T - T_0\)、\(z\)、\(v\) で書き直すと、
+      重力の定数項が消えて線形なプラントが現れます:
+    </p>
+    <div class="math-scroll">
+    $$G(s) = \frac{z(s)}{\Delta T_{cmd}(s)} = \frac{1/m}{s\,(s + d_v/m)\,(\tau_m s + 1)}
+      = \frac{27.2}{s\,(s + 1.4)\,(0.02s + 1)}$$
+    </div>
+    <p>
+      第5章の姿勢と同じ「積分が重なる系」です。ここまでが王道の前半——
+      あとは道具箱（第5〜7章）の出番です。
+    </p>
+
+    <h2>8.4 制御器設計 — カスケードと、速度で近づく知恵</h2>
+    <p>
+      構造は姿勢と同じカスケードです。実機の値（params.cpp、実飛行値）ごと示します:
+    </p>
+    <table class="data-table">
+      <thead><tr><th>ループ</th><th>\(K_p\)</th><th>\(T_i\) [s]</th><th>出力制限</th></tr></thead>
+      <tbody>
+        <tr><td>位置（外側）</td><td>0.45 [1/s]</td><td>7.0</td><td>速度指令 ±0.5 m/s</td></tr>
+        <tr><td>速度（内側）</td><td>0.1 [N/(m/s)]</td><td>2.5（ホバ時は切替可）</td><td>推力補正 ±0.15 N</td></tr>
+      </tbody>
+    </table>
+    <p>
+      速度ループの交差は約 2.7 rad/s、位置は 0.45 rad/s——帯域比 1/6 で、
+      第5章の 1/3 則よりさらに保守的です（30 Hz 計測と運用の余裕のため）。
+      注目してほしいのは<strong>出力制限 ±0.5 m/s</strong> です。これは安全装置である
+      と同時に、<strong>設計の道具</strong>でもあります。目標高度が遠いとき、
+      素朴なフィードバックは大きなオーバーシュートを出します——
+      誤差が大きい間に積分が育ってしまうからです。そこで
+      <strong>「目標の近傍までは速度制御だけで近づき、近づいてから位置制御に任せる」</strong>。
+      実は±0.5 m/s のクランプはこの考えの実装そのものです——誤差が大きい間、
+      位置ループの出力は必ずクランプに当たり、機体は「一定速度で接近する」
+      速度制御の乗り物になります。下の実験で、クランプなしの教科書版と比べてください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="appCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>目標高度 [m]:
+          <input type="range" id="apZ" min="10" max="40" value="30">
+          <span id="apZVal"></span>
+        </label>
+        <button type="button" class="sim-reset" id="apReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="apReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 実機ゲイン・実機出力制限・実測プラント。
+      ①教科書のまま（位置PI直行・制限なし）と
+      ②実機方式（速度指令クランプ±0.5 m/s＋条件付き積分）の重ね描き。
+      上段=高度、下段=鉛直速度（②が台形プロファイルになる点に注目）。
+    </p>
+
+    <ul>
+      <li><strong>①教科書のまま</strong> → 接近中に位置の積分が野放しで育ち、
+        大きく行き過ぎてからゆっくり戻ります（3mステップで約80cm）。</li>
+      <li><strong>②実機方式（クランプ＋条件付き積分）</strong> → 速度が台形プロファイルに
+        なり、行き過ぎは約3分の1に。<strong>大きな移動は「位置の問題」ではなく
+        「速度の問題」として扱う</strong>——これが実機の知恵です。</li>
+    </ul>
+    <p>
+      ②にも二十数cmの行き過ぎが残っている点に注目してください。正体は、
+      上昇中に速度ループの積分へ溜まる「上昇の抵抗分」の余りです。目標を
+      捕まえた瞬間、この余りが吐き出されるまで機体は昇り続ける——実機の開発ログで
+      <strong>「捕捉オーバーシュート」</strong>と呼ばれて格闘されていた現象そのもので、
+      8.6節の「積分の強さをフェーズで切り替える」工夫につながります。
+    </p>
+
+    <h2>8.5 現実① — 高度は 30 Hz でしか測れない</h2>
+    <p>
+      姿勢のジャイロは数kHzで読めますが、高度の絶対値を教えてくれる
+      ToF センサ（レーザーの往復時間で距離を測る素子）は
+      <strong>33 ms に1回＝30 Hz</strong> しか答えをくれません。
+      400 Hz の制御ループから見ると、13周期に1回しか高度が更新されない世界です。
+    </p>
+    <p>
+      実機はこれを<strong>相補フィルタ</strong>で埋めます: 速い動きは加速度計の積分
+      （400 Hz）が担い、ToF の更新が来るたびに高度と速度をそっと引き戻す
+      （更新1回あたり高度に30%・速度に5%）。役割分担は第5章のカスケードと同じ発想です——
+      <strong>速いが流されやすい信号と、遅いが確かな信号を組み合わせる</strong>。
+      くわしい仕組みは次章（センサと状態推定）で扱います。
+    </p>
+
+    <div class="note-box">
+      <strong>コラム — 気圧計を「あえて使わない」判断:</strong>
+      StampFly には気圧計も載っていますが、高度推定には融合していません。
+      ToF は<strong>地面からの高さ</strong>、気圧計は<strong>海抜（絶対高度）</strong>——
+      基準の違う2つを混ぜたところ、互いに喧嘩して設置場所の標高分だけ
+      推定がバイアスされる不具合になり、「読むが使わない」に落ち着きました
+      （開発ログ 2026-06-14）。<strong>センサは足せば良くなるとは限らない。
+      基準（何に対する量か）が合っていることが先</strong>——という教訓です。
+    </div>
+
+    <h2>8.6 現実② — トリム推力は動く</h2>
+    <p>
+      8.2 の電圧補償で「同じ指令なら同じ推力」になったはず——でした。
+      実際の3分間ホバリングのログ解析（2026-06-27）はこう言っています:
+      電圧補償は正しく働いている（電圧と duty の相関 −1.00、
+      duty は 0.648→0.722 と自動で増えて総推力を保っている）。
+      <strong>それでも</strong>、電池が 3.6 V を切ったあたりから高度のふらつきが
+      2〜3倍に育ち、電圧と強く相関した（相関 −0.78）。
+      閉ループ再生シミュレーションで正体を追い込むと、
+      犯人は<strong>低電圧域で残る電圧依存の推力誤差</strong>——
+      0.1 Hz 前後のゆっくりした外乱として推力に入り込んでいました。
+      静的な補償では、動的なサグ（負荷で刻々と垂れる電圧）を補いきれないのです。
+    </p>
+    <p>
+      さて、この「内側に入るゆっくりした外乱」への定石は何だったでしょうか。
+      第5章5.5節の答え——<strong>外乱が入る場所の内側の積分を強くする</strong>です。
+      外側（位置）の積分は届きません。実際の解析でも、速度ループの
+      \(T_i\) を 2.5→1.5 s に縮めるとふらつきが 20%減、1.0 s で 37%減。
+      しかも \(K_p\) を上げる案と違って交差周波数を上げない（遅れに突っ込まない）ので
+      安全側のレバーです。下の実験でこのレバーを触ってみてください。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="sagCanvas" width="760" height="330"></canvas>
+      <div class="sim-opts">
+        <label>速度ループ \(T_i\) [s]:
+          <input type="range" id="sgTi" min="10" max="30" value="25">
+          <span id="sgTiVal"></span>
+        </label>
+        <label>サグ外乱の強さ [mN]:
+          <input type="range" id="sgAmp" min="0" max="8" value="5">
+          <span id="sgAmpVal"></span>
+        </label>
+        <button type="button" class="sim-reset" id="sgReset">初期値に戻す</button>
+      </div>
+      <div class="sim-readout" id="sgReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: 高度0.8mを保持中、t=10s から電池サグ相当の低周波外乱
+      （一定分＋0.1Hz、実飛行同定で 4.5〜8.5 mN 級）が推力に加わる。
+      灰色の破線は \(T_i\)=2.5 s（既定値）の参照。実飛行ログの再生解析では
+      \(T_i\)=1.5 で −20%、1.0 で −37% ——この教材のモデルでもほぼ同じ比率になります。
+    </p>
+
+    <p>
+      実機はさらに2つの工夫を積んでいます。
+      ①<strong>積分の強さを飛行フェーズで切り替える</strong>——ホバ中だけ強い積分
+      （上の \(T_i\) レバー）を使い、離陸中は元に戻す。強い積分を離陸まで効かせると、
+      目標を捕まえる瞬間の行き過ぎが悪化するからです（8.4の実験①と同じ理屈）。
+      ②<strong>トリム推力を学習する</strong>——定常ホバリング中の速度ループの
+      定常出力は「フィードフォワードが外した分」そのものなので、これを時定数20秒で
+      フィードフォワード側へ移し替え、着陸時に保存します。飛ぶたびに
+      「この機体・この電池の今日のトリム」を覚え直すわけです。
+      <strong>トリムは一度計算して終わりの数字ではなく、測って学び続ける量</strong>——
+      これが2つ目の現実への答えです。
+      なお、外乱そのものを推定して先回りで打ち消す<strong>外乱オブザーバ（DOB）</strong>
+      という進んだ工夫もあり、StampFly でも試行中です——
+      こういう手もある、うまくいくかもしれない、という段階の話題として
+      紹介にとどめます。
+    </p>
+
+    <h2>8.7 実機の値で運転する — 高度ホールド</h2>
+    <p>
+      仕上げです。実機のゲイン・実機の制限・30 Hz の計測・電池サグ外乱——
+      全部入りの高度ホールドを運転してください。第6章6.7と同じく、
+      プラントは実測値、初期値は実機の飛行実績ゲインです。
+    </p>
+
+    <div class="sim-panel">
+      <canvas id="holdCanvas" width="760" height="430"></canvas>
+      <div class="sim-opts">
+        <label>速度 \(K_p\):
+          <input type="range" id="hdKp" min="2" max="40" value="10">
+          <span id="hdKpVal"></span>
+        </label>
+        <label>速度 \(T_i\) [s]:
+          <input type="range" id="hdTi" min="10" max="30" value="25">
+          <span id="hdTiVal"></span>
+        </label>
+        <label><input type="checkbox" id="hdSag" checked> 電池サグ外乱（t=12s〜）</label>
+        <label><input type="checkbox" id="hdTof" checked> 30Hz計測（外すと理想計測）</label>
+        <button type="button" class="sim-reset" id="hdReset">実機値に戻す</button>
+      </div>
+      <div class="sim-readout" id="hdReadout"></div>
+    </div>
+
+    <p class="src">
+      条件: t=1s に +0.8 m のステップ（③方式: 速度0.4m/sで接近→捕捉）、
+      t=12s から サグ外乱 5 mN。計測は ToF 30 Hz＋相補フィルタ簡略版
+      （加速度積分＋ToF更新で高度30%/速度5%引き戻し、ToFに±3mmノイズ。
+      加速度バイアスは無し——本物の推定器は第9章で）。
+      上段=高度（推定値も薄く重ね描き）、下段=推力補正 [mN]（±150mN 制限）。
+    </p>
+
+    <p>試してほしい実験:</p>
+    <ul>
+      <li>サグ外乱を入れて \(T_i\) を下げる → 8.6 のレバーがここでも効きます。</li>
+      <li><strong>30Hz計測を外して理想計測にしても、ふらつきはほぼ変わりません</strong>
+        ——「ブレは計測の遅さが原因ではない」という実飛行解析の結論を、
+        自分の手で確認できます。</li>
+      <li>速度 \(K_p\) を上げる → このモデルでは改善に見えます。ところが……（下のコラム）</li>
+    </ul>
+
+    <div class="note-box">
+      <strong>コラム — モデルが「上げろ」と言い、実機が「上げるな」と言うとき:</strong>
+      この教材のモデルでは速度 \(K_p\) を上げるとふらつきが減ります。
+      しかし実機のファームウェアには「\(K_p\) を上げると遅れで逆効果」という
+      注記が残っており、実際の飛行ログ再生解析でも同じ矛盾が記録されています。
+      これは<strong>モデルに入っていない遅れ（推定器・通信・振動フィルタなど）がある
+      サイン</strong>です。シミュレーションが実機と食い違ったとき、疑うべきは
+      実機ではなくモデルの側——だからこそ \(T_i\) レバー（交差周波数を上げず、
+      モデル外の遅れに突っ込まない）が安全な選択になるのです。
+    </div>
+
+    <h2>まとめ</h2>
+    <ul>
+      <li>高度は「モデル → トリム → 線形化 → 設計」という<strong>制御設計の王道</strong>を
+        1次元で通しで練習できる軸。プラントは \(27.2/(s(s+1.4)(0.02s+1))\)（全て実測値）。</li>
+      <li>トリム点 \(T_0 = mg\) は1行だが、「同じ Duty で同じ推力」は電池電圧で崩れる。
+        <strong>補償でずれを小さくとどめ、残りをフィードバックで埋める</strong>のが実機の分担。</li>
+      <li>大きな高度変更は「位置の問題」でなく<strong>「速度の問題」</strong>として扱う——
+        目標近傍まで速度制御で近づけば、オーバーシュートは80cm→数cmに。</li>
+      <li>高度計測は 30 Hz。速い加速度計と確かな ToF の<strong>相補</strong>で埋める。
+        基準の違う気圧計は「あえて使わない」。</li>
+      <li>それでも残る電池サグの低周波外乱には、<strong>内側（速度）の積分を強くする</strong>のが
+        正しいレバー（外側は届かない・交差を上げないので安全）。実機はフェーズ切替と
+        <strong>トリム学習</strong>まで積んでいる。</li>
+    </ul>
+    <p>
+      30 Hz の計測を「埋める」と言いましたが、その中身——加速度計とジャイロと ToF を
+      どう信じてどう混ぜるか——はそれ自体が一つの分野です。
+      次章では、いよいよセンサと状態推定の世界に入ります。
+    </p>
+
+    <p class="src">
+      本章の対話記録: notes/qa_log.md の Q-ALT-1〜6。実機実装の出典:
+      stampfly_ecosystem firmware/vehicle（params.cpp・actuator.cpp・
+      complementary_estimator.cpp）、飛行ログ解析と対策の経緯は同リポジトリの
+      開発ログ（2026-06-14〜07-18 のコミット群）、整理ノート
+      analysis/notes/altitude_model_20260718.md。プラント数値は第4章の同定値。
+    </p>
+
+    <nav class="chapter-nav">
+      <a href="chapter06.html">← 第6章 PID制御の道具箱（第7章 ループ整形は準備中）</a>
+      <span>第9章 センサと状態推定（準備中）→</span>
+    </nav>
+  </main>
+
+  <footer class="site-footer">
+    <p><a href="../index.html">← 表紙（目次）へ戻る</a></p>
+    マルチコプタ制御入門 — 対話から生まれるインタラクティブ教材
+  </footer>
+
+  <script>
+  // ==========================================================
+  // Chapter 8 sims: altitude control on the identified vertical plant
+  // 第8章教材: 実測値の鉛直プラント m·v̇=ΔT−dv·v, ż=v に実機ゲインの
+  // カスケード（位置→速度→推力）を掛ける
+  // ==========================================================
+  (function () {
+    'use strict';
+
+    const M = 0.0368, DVM = 1.4, TAUM = 0.02, DT = 1e-3;
+    const KP_P = 0.45, TI_P = 7.0, KP_V = 0.1;
+    const V_CLAMP = 0.5, T_CLAMP = 0.15;
+    const $ = id => document.getElementById(id);
+
+    function themeColors() {
+      const s = getComputedStyle(document.documentElement);
+      return {
+        fg: s.getPropertyValue('--fg').trim() || '#222',
+        muted: s.getPropertyValue('--fg-muted').trim() || '#888',
+        accent: s.getPropertyValue('--accent').trim() || '#0b5cad',
+        border: s.getPropertyValue('--border').trim() || '#ccc',
+      };
+    }
+    function drawAxes(ctx, x0, y0, w, h, yMinLabel, yMaxLabel, yLabel) {
+      const c = themeColors();
+      ctx.strokeStyle = c.border; ctx.lineWidth = 1;
+      ctx.strokeRect(x0, y0, w, h);
+      ctx.fillStyle = c.muted; ctx.font = '11px sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(yMaxLabel, x0 - 6, y0 + 10);
+      ctx.fillText(yMinLabel, x0 - 6, y0 + h);
+      ctx.save(); ctx.translate(x0 - 44, y0 + h / 2); ctx.rotate(-Math.PI / 2);
+      ctx.textAlign = 'center'; ctx.fillText(yLabel, 0, 0); ctx.restore();
+    }
+    function plotXY(ctx, xs, ys, x0, y0, w, h, xMax, yMin, yMax, color, dashed, width) {
+      ctx.strokeStyle = color; ctx.lineWidth = width || 2.2;
+      if (dashed) ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      let st = false;
+      for (let i = 0; i < xs.length; i++) {
+        const xx = x0 + (xs[i] / xMax) * w;
+        const yy = y0 + h * ((yMax - Math.max(yMin, Math.min(yMax, ys[i]))) / (yMax - yMin));
+        if (!st) { ctx.moveTo(xx, yy); st = true; } else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke(); ctx.setLineDash([]);
+    }
+
+    // altitude cascade sim / 高度カスケードの共通シミュレータ
+    // mode: 'naive'（教科書PI直行）|'clamp'（クランプ+条件付き積分）|'capture'（速度接近→捕捉）
+    function altSim(o) {
+      const opt = Object.assign({
+        mode: 'capture', zRef: 0.8, tRef: 1.0, kpV: KP_V, tiV: 2.5,
+        sagA: 0, sagT: 1e9, tof: false, tEnd: 12, sample: 0.02,
+      }, o);
+      const n = Math.round(opt.tEnd / DT);
+      let z = 0, v = 0, th = 0, intP = 0, intV = 0;
+      let zh = 0, vh = 0, tofT = 0;
+      let seed = 24601;
+      const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x3fffffff - 1; };
+      let captured = (opt.mode !== 'capture');
+      const step = Math.round(opt.sample / DT);
+      const ts = [], zs = [], vs = [], us = [], zhs = [];
+      let peak = 0, satSteps = 0;
+      const devs = [];
+      for (let i = 0; i < n; i++) {
+        const t = i * DT;
+        const r = t >= opt.tRef ? opt.zRef : 0;
+        // --- measurement / 計測（30Hz ToF + 相補簡略 or 理想）---
+        if (opt.tof) {
+          const aTrue = (th / M) - DVM * v + (t >= opt.sagT ? opt.sagA * (0.4 + Math.sin(2 * Math.PI * 0.1 * t)) / M : 0);
+          vh += aTrue * DT;                       // accel integration (bias-free idealization)
+          zh += vh * DT;
+          tofT += DT;
+          if (tofT >= 1 / 30) {
+            tofT -= 1 / 30;
+            const zTof = z + 0.003 * rnd();       // ±3mm ToF noise
+            const err = zTof - zh;
+            zh += 0.30 * err;                     // kTofAltGain
+            vh += 0.05 * err / (1 / 30);          // kTofVelGain（更新周期で正規化）
+          }
+        } else { zh = z; vh = v; }
+        // --- outer: position / 外側: 位置 ---
+        const eP = r - zh;
+        let vCmd;
+        if (opt.mode === 'naive') {
+          intP += (KP_P / TI_P) * eP * DT;
+          vCmd = KP_P * eP + intP;
+        } else if (opt.mode === 'clamp' || captured) {
+          let iN = intP + (KP_P / TI_P) * eP * DT;
+          let vc = KP_P * eP + iN;
+          const vcc = Math.max(-V_CLAMP, Math.min(V_CLAMP, vc));
+          if (vcc !== vc && Math.sign(eP) === Math.sign(vc)) iN = intP;
+          intP = iN; vCmd = vcc;
+        } else {
+          vCmd = Math.sign(eP) * 0.4;             // 速度だけで接近 / velocity-only approach
+          if (Math.abs(eP) < 0.3) { captured = true; intP = 0; }
+        }
+        // --- inner: velocity / 内側: 速度 ---
+        const eV = vCmd - vh;
+        let iN2 = intV + (opt.kpV / opt.tiV) * eV * DT;
+        let u = opt.kpV * eV + iN2;
+        const uc = Math.max(-T_CLAMP, Math.min(T_CLAMP, u));
+        if (uc !== u) {
+          satSteps++;
+          if (opt.mode !== 'naive' && Math.sign(eV) === Math.sign(u)) iN2 = intV;
+        }
+        intV = iN2; u = uc;
+        // --- actuator + plant / モータ遅れ＋機体 ---
+        th += (u - th) / TAUM * DT;
+        const d = t >= opt.sagT ? opt.sagA * (0.4 + Math.sin(2 * Math.PI * 0.1 * t)) : 0;
+        const a = (th + d) / M - DVM * v;
+        v += a * DT; z += v * DT;
+        if (t > opt.tRef && z > peak) peak = z;
+        if (t > opt.sagT + 3) devs.push(z - r);
+        if (i % step === 0) { ts.push(t); zs.push(z); vs.push(v); us.push(u * 1000); zhs.push(zh); }
+      }
+      const std = devs.length
+        ? Math.sqrt(devs.reduce((s, x) => s + x * x, 0) / devs.length) * 1000 : 0;
+      return { ts, zs, vs, us, zhs, os: Math.max(0, (peak - opt.zRef) * 100),
+               std, satTime: satSteps * DT };
+    }
+
+    // ---------- 8.4 approach strategies / 大ステップの3方式 ----------
+    (function () {
+      const cv = $('appCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const zRef = Number($('apZ').value) / 10;
+        $('apZVal').textContent = zRef.toFixed(1);
+        const tEnd = 20;
+        const rN = altSim({ mode: 'naive', zRef, tEnd });
+        const rC = altSim({ mode: 'clamp', zRef, tEnd });
+        const x0 = 70, w = 660, hT = 210;
+        const zMax = Math.ceil((zRef + 1) * 2) / 2;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(zMax), '高度 [m]');
+        const yr = 24 + hT * ((zMax - zRef) / zMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        plotXY(ctx, rN.ts, rN.zs, x0, 24, w, hT, tEnd, 0, zMax, '#c2373b', false, 2.0);
+        plotXY(ctx, rC.ts, rC.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.4);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = '#c2373b'; ctx.fillText('①教科書のまま', x0 + 8, 20);
+        ctx.fillStyle = c.accent; ctx.fillText('②実機方式（クランプ+条件付き積分）', x0 + 120, 20);
+        const yB = 262, hB = 130, vMax = 1.2;
+        drawAxes(ctx, x0, yB, w, hB, String(-vMax), String(vMax), '速度 [m/s]');
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, rN.ts, rN.vs, x0, yB, w, hB, tEnd, -vMax, vMax, '#c2373b', false, 1.6);
+        plotXY(ctx, rC.ts, rC.vs, x0, yB, w, hB, tEnd, -vMax, vMax, c.accent, false, 2.0);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]（②の速度が台形プロファイルになっている点に注目）', x0 + w / 2, yB + hB + 16);
+        $('apReadout').textContent =
+          `オーバーシュート: ①教科書のまま ${rN.os.toFixed(0)} cm / ②実機方式 ${rC.os.toFixed(0)} cm`;
+      }
+      $('apZ').addEventListener('input', redraw);
+      $('apReset').addEventListener('click', () => { $('apZ').value = '30'; redraw(); });
+      redraw();
+    })();
+
+    // ---------- 8.6 sag disturbance vs Ti lever / サグ外乱とTiレバー ----------
+    (function () {
+      const cv = $('sagCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const tiV = Number($('sgTi').value) / 10;
+        const amp = Number($('sgAmp').value) * 1e-3;
+        $('sgTiVal').textContent = tiV.toFixed(1);
+        $('sgAmpVal').textContent = (amp * 1e3).toFixed(0);
+        const base = { mode: 'capture', zRef: 0.8, sagT: 10, tEnd: 40, sagA: amp };
+        const cur = altSim(Object.assign({ tiV }, base));
+        const ref = altSim(Object.assign({ tiV: 2.5 }, base));
+        const x0 = 70, w = 660, h = 250;
+        const dMax = 100;      // ±100mm 偏差表示
+        drawAxes(ctx, x0, 26, w, h, String(-dMax), String(dMax), '高度偏差 [mm]');
+        const y0line = 26 + h * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        const xd = x0 + (10 / 40) * w;
+        ctx.strokeStyle = c.muted; ctx.setLineDash([3, 3]);
+        ctx.beginPath(); ctx.moveTo(xd, 26); ctx.lineTo(xd, 26 + h); ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillText('サグ外乱 開始', xd + 4, 40);
+        const dev = r => r.zs.map((zz, i) => (r.ts[i] > 2 ? (zz - 0.8) * 1000 : 0));
+        plotXY(ctx, ref.ts, dev(ref), x0, 26, w, h, 40, -dMax, dMax, c.muted, true, 1.4);
+        plotXY(ctx, cur.ts, dev(cur), x0, 26, w, h, 40, -dMax, dMax, c.accent, false, 2.2);
+        ctx.textAlign = 'left';
+        ctx.fillStyle = c.muted; ctx.fillText('－－ Ti=2.5（既定）', x0 + 8, 22);
+        ctx.fillStyle = c.accent; ctx.fillText('Ti=' + tiV.toFixed(1), x0 + 140, 22);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, 26 + h + 16);
+        const rel = ref.std > 0 ? ((cur.std / ref.std - 1) * 100) : 0;
+        $('sgReadout').textContent =
+          `外乱中のふらつき std: ${cur.std.toFixed(1)} mm（Ti=2.5 比 ${rel >= 0 ? '+' : ''}${rel.toFixed(0)}%）`;
+      }
+      ['sgTi', 'sgAmp'].forEach(id => $(id).addEventListener('input', redraw));
+      $('sgReset').addEventListener('click', () => {
+        $('sgTi').value = '25'; $('sgAmp').value = '5'; redraw();
+      });
+      redraw();
+    })();
+
+    // ---------- 8.7 real-gain altitude hold / 実機値の高度ホールド ----------
+    (function () {
+      const cv = $('holdCanvas'), ctx = cv.getContext('2d');
+      function redraw() {
+        const c = themeColors();
+        ctx.clearRect(0, 0, cv.width, cv.height);
+        const kpV = Number($('hdKp').value) / 100;
+        const tiV = Number($('hdTi').value) / 10;
+        $('hdKpVal').textContent = kpV.toFixed(2);
+        $('hdTiVal').textContent = tiV.toFixed(1);
+        const sag = $('hdSag').checked;
+        const tof = $('hdTof').checked;
+        const tEnd = 25;
+        const res = altSim({ mode: 'capture', zRef: 0.8, kpV, tiV, tof,
+                             sagA: sag ? 5e-3 : 0, sagT: sag ? 12 : 1e9, tEnd });
+        const x0 = 70, w = 660, hT = 210, zMax = 1.2;
+        drawAxes(ctx, x0, 24, w, hT, '0', String(zMax), '高度 [m]');
+        const yr = 24 + hT * ((zMax - 0.8) / zMax);
+        ctx.strokeStyle = c.muted; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(x0, yr); ctx.lineTo(x0 + w, yr); ctx.stroke();
+        ctx.setLineDash([]);
+        if (sag) {
+          const xd = x0 + (12 / tEnd) * w;
+          ctx.strokeStyle = c.border; ctx.setLineDash([3, 3]);
+          ctx.beginPath(); ctx.moveTo(xd, 24); ctx.lineTo(xd, 24 + hT); ctx.stroke();
+          ctx.setLineDash([]);
+          ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
+          ctx.fillText('サグ外乱', xd + 4, 38);
+        }
+        if (tof) plotXY(ctx, res.ts, res.zhs, x0, 24, w, hT, tEnd, 0, zMax, c.muted, false, 1.0);
+        plotXY(ctx, res.ts, res.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.2);
+        ctx.font = '12px sans-serif'; ctx.textAlign = 'left';
+        ctx.fillStyle = c.accent; ctx.fillText('真の高度', x0 + 8, 20);
+        if (tof) { ctx.fillStyle = c.muted; ctx.fillText('推定高度（30Hz ToF＋相補）', x0 + 80, 20); }
+        const yB = 262, hB = 130, uMax = 160;
+        drawAxes(ctx, x0, yB, w, hB, String(-uMax), String(uMax), '推力補正 [mN]');
+        [150, -150].forEach(vv => {
+          const yy = yB + hB * ((uMax - vv) / (2 * uMax));
+          ctx.strokeStyle = '#c2373b'; ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x0, yy); ctx.lineTo(x0 + w, yy); ctx.stroke();
+          ctx.setLineDash([]);
+        });
+        const y0line = yB + hB * 0.5;
+        ctx.strokeStyle = c.border;
+        ctx.beginPath(); ctx.moveTo(x0, y0line); ctx.lineTo(x0 + w, y0line); ctx.stroke();
+        plotXY(ctx, res.ts, res.us, x0, yB, w, hB, tEnd, -uMax, uMax, '#2e8b57', false, 1.6);
+        ctx.fillStyle = c.fg; ctx.textAlign = 'center';
+        ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
+        const isReal = Math.abs(kpV - 0.1) < 1e-9 && Math.abs(tiV - 2.5) < 1e-9;
+        $('hdReadout').textContent =
+          `オーバーシュート ${res.os.toFixed(1)} cm | サグ中ふらつき std ${res.std.toFixed(1)} mm | ` +
+          `飽和時間 ${res.satTime.toFixed(2)} s` + (isReal ? ' | ← 実機の飛行実績ゲイン' : '');
+      }
+      ['hdKp', 'hdTi'].forEach(id => $(id).addEventListener('input', redraw));
+      ['hdSag', 'hdTof'].forEach(id => $(id).addEventListener('change', redraw));
+      $('hdReset').addEventListener('click', () => {
+        $('hdKp').value = '10'; $('hdTi').value = '25';
+        $('hdSag').checked = true; $('hdTof').checked = true; redraw();
+      });
+      redraw();
+    })();
+  })();
+  </script>
+  <script data-goatcounter="https://kouhei1970.goatcounter.com/count"
+        async src="//gc.zgo.at/count.js"></script>
+</body>
+</html>
