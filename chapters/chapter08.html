@@ -314,7 +314,7 @@
       閉ループ再生シミュレーションで正体を追い込むと、
       犯人は<strong>低電圧域で残る電圧依存の推力誤差</strong>——
       0.1 Hz 前後のゆっくりした外乱として推力に入り込んでいました。
-      静的な補償では、動的なサグ（負荷で刻々と垂れる電圧）を補いきれないのです。
+      静的な補償では、負荷で刻々と下がっていく電圧の動きを補いきれないのです。
     </p>
     <p>
       さて、この「内側に入るゆっくりした外乱」への定石は何だったでしょうか。
@@ -332,7 +332,7 @@
           <input type="range" id="sgTi" min="10" max="30" value="25">
           <span id="sgTiVal"></span>
         </label>
-        <label>サグ外乱の強さ [mN]:
+        <label>電圧低下の外乱の強さ [mN]:
           <input type="range" id="sgAmp" min="0" max="8" value="5">
           <span id="sgAmpVal"></span>
         </label>
@@ -342,7 +342,7 @@
     </div>
 
     <p class="src">
-      条件: 高度0.8mを保持中、t=10s から電池サグ相当の低周波外乱
+      条件: 高度0.8mを保持中、t=10s から電池の電圧低下に相当する低周波外乱
       （一定分＋0.1Hz、実飛行同定で 4.5〜8.5 mN 級）が推力に加わる。
       灰色の破線は \(T_i\)=2.5 s（既定値）の参照。実飛行ログの再生解析では
       \(T_i\)=1.5 で −20%、1.0 で −37% ——この教材のモデルでもほぼ同じ比率になります。
@@ -367,7 +367,7 @@
 
     <h2>8.8 実機の値で運転する — 高度ホールド</h2>
     <p>
-      仕上げです。実機のゲイン・実機の制限・30 Hz の計測・電池サグ外乱——
+      仕上げです。実機のゲイン・実機の制限・30 Hz の計測・電池の電圧低下による外乱——
       全部入りの高度ホールドを運転してください。第6章6.7と同じく、
       プラントは実測値、初期値は実機の飛行実績ゲインです。
     </p>
@@ -383,7 +383,7 @@
           <input type="range" id="hdTi" min="10" max="30" value="25">
           <span id="hdTiVal"></span>
         </label>
-        <label><input type="checkbox" id="hdSag" checked> 電池サグ外乱（t=12s〜）</label>
+        <label><input type="checkbox" id="hdSag" checked> 電圧低下の外乱（t=12s〜）</label>
         <label><input type="checkbox" id="hdTof" checked> 30Hz計測（外すと理想計測）</label>
         <button type="button" class="sim-reset" id="hdReset">実機値に戻す</button>
       </div>
@@ -392,7 +392,7 @@
 
     <p class="src">
       条件: t=1s に +0.8 m のステップ（③方式: 速度0.4m/sで接近→捕捉）、
-      t=12s から サグ外乱 5 mN。計測は ToF 30 Hz＋相補フィルタ簡略版
+      t=12s から電圧低下の外乱 5 mN。計測は ToF 30 Hz＋相補フィルタ簡略版
       （加速度積分＋ToF更新で高度30%/速度5%引き戻し、ToFに±3mmノイズ。
       加速度バイアスは無し——本物の推定器は第9章で）。
       上段=高度（推定値も薄く重ね描き）、下段=推力補正 [mN]（±150mN 制限）。
@@ -400,7 +400,7 @@
 
     <p>試してほしい実験:</p>
     <ul>
-      <li>サグ外乱を入れて \(T_i\) を下げる → 8.6 のレバーがここでも効きます。</li>
+      <li>電圧低下の外乱を入れて \(T_i\) を下げる → 8.7 のレバーがここでも効きます。</li>
       <li><strong>30Hz計測を外して理想計測にしても、ふらつきはほぼ変わりません</strong>
         ——「ブレは計測の遅さが原因ではない」という実飛行解析の結論を、
         自分の手で確認できます。</li>
@@ -433,7 +433,7 @@
         固定ゲインの相補はバイアスに弱く、<strong>カルマンフィルタは
         バイアスごと状態にして推定する——実機の既定の推定器も
         カルマン族（15状態 ESKF）</strong>。基準の違う気圧計は「あえて使わない」。</li>
-      <li>それでも残る電池サグの低周波外乱には、<strong>内側（速度）の積分を強くする</strong>のが
+      <li>それでも残る電池の電圧低下による低周波外乱には、<strong>内側（速度）の積分を強くする</strong>のが
         正しいレバー（外側は届かない・交差を上げないので安全）。実機はフェーズ切替と
         <strong>トリム学習</strong>まで積んでいる。</li>
     </ul>
@@ -820,7 +820,7 @@
       redraw();
     })();
 
-    // ---------- 8.6 sag disturbance vs Ti lever / サグ外乱とTiレバー ----------
+    // ---------- 8.7 sag disturbance vs Ti lever / 電圧低下外乱とTiレバー ----------
     (function () {
       const cv = $('sagCanvas'), ctx = cv.getContext('2d');
       function redraw() {
@@ -844,7 +844,7 @@
         ctx.beginPath(); ctx.moveTo(xd, 26); ctx.lineTo(xd, 26 + h); ctx.stroke();
         ctx.setLineDash([]);
         ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-        ctx.fillText('サグ外乱 開始', xd + 4, 40);
+        ctx.fillText('電圧低下の外乱 開始', xd + 4, 40);
         const dev = r => r.zs.map((zz, i) => (r.ts[i] > 2 ? (zz - 0.8) * 1000 : 0));
         plotXY(ctx, ref.ts, dev(ref), x0, 26, w, h, 40, -dMax, dMax, c.muted, true, 1.4);
         plotXY(ctx, cur.ts, dev(cur), x0, 26, w, h, 40, -dMax, dMax, c.accent, false, 2.2);
@@ -891,7 +891,7 @@
           ctx.beginPath(); ctx.moveTo(xd, 24); ctx.lineTo(xd, 24 + hT); ctx.stroke();
           ctx.setLineDash([]);
           ctx.fillStyle = c.muted; ctx.font = '11px sans-serif'; ctx.textAlign = 'left';
-          ctx.fillText('サグ外乱', xd + 4, 38);
+          ctx.fillText('電圧低下の外乱', xd + 4, 38);
         }
         if (tof) plotXY(ctx, res.ts, res.zhs, x0, 24, w, hT, tEnd, 0, zMax, c.muted, false, 1.0);
         plotXY(ctx, res.ts, res.zs, x0, 24, w, hT, tEnd, 0, zMax, c.accent, false, 2.2);
@@ -914,7 +914,7 @@
         ctx.fillText('時間 [s]', x0 + w / 2, yB + hB + 16);
         const isReal = Math.abs(kpV - 0.1) < 1e-9 && Math.abs(tiV - 2.5) < 1e-9;
         $('hdReadout').textContent =
-          `オーバーシュート ${res.os.toFixed(1)} cm | サグ中ふらつき std ${res.std.toFixed(1)} mm | ` +
+          `オーバーシュート ${res.os.toFixed(1)} cm | 外乱中ふらつき std ${res.std.toFixed(1)} mm | ` +
           `飽和時間 ${res.satTime.toFixed(2)} s` + (isReal ? ' | ← 実機の飛行実績ゲイン' : '');
       }
       ['hdKp', 'hdTi'].forEach(id => $(id).addEventListener('input', redraw));
